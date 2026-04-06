@@ -819,7 +819,7 @@ export default function RoomPage() {
             <SearchAndQueue room={room} isHost={isHost} canAdd={canAdd} onAddToQueue={handleAddToQueue} onPlayNow={handlePlayNow} onRemove={i => isHost && removeFromQueue(roomId, i)} ytAccessToken={user?.youtubeAccessToken} />
           </div>
 
-          {/* Chat Tab */}}
+          {/* Chat Tab */}
           <div style={{ display: mobileTab === 'chat' ? 'flex' : 'none', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
             <ChatPanel roomId={roomId} messages={messages} currentUser={user} />
           </div>
