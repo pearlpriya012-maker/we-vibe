@@ -85,7 +85,7 @@ function ProgressBar({ currentTime, duration, isHost, canControl, onSeek }) {
 }
 
 // ─── YouTube Playlist Panel ───
-function PlaylistPanel({ onAddToQueue, canAdd }) {
+function PlaylistPanel({ onAddToQueue, canAdd, ytAccessToken }) {
   const [playlists, setPlaylists] = useState([])
   const [tracks, setTracks] = useState([])
   const [loading, setLoading] = useState(false)
@@ -97,7 +97,7 @@ function PlaylistPanel({ onAddToQueue, canAdd }) {
       setLoading(true)
       try {
         const res = await fetch('/api/youtube/playlists', {
-          headers: { Authorization: `Bearer ${document.cookie.match(/yt_access_token=([^;]+)/)?.[1] || ''}` }
+          headers: { Authorization: `Bearer ${ytAccessToken || ''}` }
         })
         const data = await res.json()
         setPlaylists(data.playlists || [])
@@ -179,7 +179,7 @@ function PlaylistPanel({ onAddToQueue, canAdd }) {
 }
 
 // ─── Search & Queue Panel ───
-function SearchAndQueue({ room, isHost, canAdd, onAddToQueue, onPlayNow, onRemove }) {
+function SearchAndQueue({ room, isHost, canAdd, onAddToQueue, onPlayNow, onRemove, ytAccessToken }) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState([])
   const [searching, setSearching] = useState(false)
@@ -213,7 +213,7 @@ function SearchAndQueue({ room, isHost, canAdd, onAddToQueue, onPlayNow, onRemov
       </div>
 
       {tab === 'playlists' ? (
-        <PlaylistPanel onAddToQueue={onAddToQueue} canAdd={canAdd} />
+        <PlaylistPanel onAddToQueue={onAddToQueue} canAdd={canAdd} ytAccessToken={ytAccessToken} />
       ) : tab === 'queue' ? (
         /* ── Queue Tab ── */
         <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
@@ -816,10 +816,10 @@ export default function RoomPage() {
 
           {/* Queue Tab */}
           <div style={{ display: mobileTab === 'queue' ? 'flex' : 'none', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-            <SearchAndQueue room={room} isHost={isHost} canAdd={canAdd} onAddToQueue={handleAddToQueue} onPlayNow={handlePlayNow} onRemove={i => isHost && removeFromQueue(roomId, i)} />
+            <SearchAndQueue room={room} isHost={isHost} canAdd={canAdd} onAddToQueue={handleAddToQueue} onPlayNow={handlePlayNow} onRemove={i => isHost && removeFromQueue(roomId, i)} ytAccessToken={user?.youtubeAccessToken} />
           </div>
 
-          {/* Chat Tab */}
+          {/* Chat Tab */}}
           <div style={{ display: mobileTab === 'chat' ? 'flex' : 'none', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
             <ChatPanel roomId={roomId} messages={messages} currentUser={user} />
           </div>
@@ -925,7 +925,7 @@ export default function RoomPage() {
                   onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--green)'; e.currentTarget.style.color = 'var(--green)' }}
                   onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-dim)' }}>◀</button>
               </div>
-              <SearchAndQueue room={room} isHost={isHost} canAdd={canAdd} onAddToQueue={handleAddToQueue} onPlayNow={handlePlayNow} onRemove={i => isHost && removeFromQueue(roomId, i)} />
+              <SearchAndQueue room={room} isHost={isHost} canAdd={canAdd} onAddToQueue={handleAddToQueue} onPlayNow={handlePlayNow} onRemove={i => isHost && removeFromQueue(roomId, i)} ytAccessToken={user?.youtubeAccessToken} />
             </>
           )}
         </div>
