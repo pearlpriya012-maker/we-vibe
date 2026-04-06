@@ -187,6 +187,7 @@ function SearchAndQueue({ room, isHost, canAdd, onAddToQueue, onPlayNow, onRemov
   const [playlistResults, setPlaylistResults] = useState([])
   const [searching, setSearching] = useState(false)
   const [tab, setTab] = useState(initialTab || 'search') // 'search' | 'queue' | 'playlists'
+  useEffect(() => { if (initialTab && hideTabs) setTab(initialTab) }, [initialTab])
   const debRef = useRef(null)
   const playlistCacheRef = useRef(null) // cached [{videoId, title, channelTitle, thumbnail, durationFormatted, playlistName}]
 
