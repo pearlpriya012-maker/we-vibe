@@ -254,10 +254,10 @@ function SearchAndQueue({ room, isHost, canAdd, onAddToQueue, onPlayNow, onRemov
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-      {/* Sub-tabs: Search | Queue | Playlists */}
-      <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-        {[['search', '🔍 Search'], ['queue', '🎵 Queue'], ['playlists', '📋 Playlists']].map(([id, label]) => (
-          <button key={id} onClick={() => setTab(id)} style={{ flex: 1, padding: '10px 4px', background: 'transparent', border: 'none', borderBottom: `2px solid ${tab === id ? 'var(--green)' : 'transparent'}`, color: tab === id ? 'var(--green)' : 'var(--text-dim)', fontFamily: 'Oswald', fontSize: '0.65rem', letterSpacing: '0.08em', textTransform: 'uppercase', cursor: 'pointer', transition: 'all 0.2s', marginBottom: -1 }}>
+      {/* Sub-tabs: Search | Queue | Playlist | AI Bond */}
+      <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', flexShrink: 0, overflowX: 'auto', scrollbarWidth: 'none' }}>
+        {[['search', '🔍 Search'], ['queue', '🎵 Queue'], ['playlists', '📋 Playlist'], ['aibond', '🐻‍❄️ AI Bond']].map(([id, label]) => (
+          <button key={id} onClick={() => setTab(id)} style={{ flex: 1, minWidth: 'max-content', padding: '10px 10px', background: 'transparent', border: 'none', borderBottom: `2px solid ${tab === id ? 'var(--green)' : 'transparent'}`, color: tab === id ? 'var(--green)' : 'var(--text-dim)', fontFamily: 'Oswald', fontSize: '0.62rem', letterSpacing: '0.06em', textTransform: 'uppercase', cursor: 'pointer', transition: 'all 0.2s', marginBottom: -1, whiteSpace: 'nowrap' }}>
             {label}
           </button>
         ))}
@@ -265,6 +265,8 @@ function SearchAndQueue({ room, isHost, canAdd, onAddToQueue, onPlayNow, onRemov
 
       {tab === 'playlists' ? (
         <PlaylistPanel onAddToQueue={onAddToQueue} canAdd={canAdd} ytAccessToken={ytAccessToken} />
+      ) : tab === 'aibond' ? (
+        <AIBondPanel room={room} canAdd={canAdd} onAddToQueue={onAddToQueue} ytAccessToken={ytAccessToken} />
       ) : tab === 'queue' ? (
         /* ── Queue Tab ── */
         <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
@@ -937,7 +939,7 @@ export default function RoomPage() {
   function PlayerContent({ compact = false }) {
     return room.currentTrack ? (
       <>
-        {musicMode && <MusicVisualizer track={room.currentTrack} isPlaying={room.isPlaying} />}
+        {musicMode && !compact && <MusicVisualizer track={room.currentTrack} isPlaying={room.isPlaying} />}
         {ytPlayerEl}
         {!musicMode && !isMobile && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
@@ -1017,63 +1019,62 @@ export default function RoomPage() {
           </div>
         </header>
 
-        {/* Mobile Content Area — single scrollable page */}
-        <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', position: 'relative', zIndex: 1, WebkitOverflowScrolling: 'touch' }}>
+        {/* Mobile Content Area */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative', zIndex: 1 }}>
 
-          {/* Mobile tap-to-unlock audio overlay */}
+          {/* Tap-to-unlock overlay */}
           {isMobile && !mobileTapped && room?.currentTrack && (
             <div onClick={() => { setMobileTapped(true); try { ytPlayerRef.current?.playVideo?.() } catch {} }}
-              style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(8px)', cursor: 'pointer' }}>
+              style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)', cursor: 'pointer' }}>
               <div style={{ fontSize: '3rem' }}>🎵</div>
               <div style={{ fontFamily: 'Oswald', fontSize: '1rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#fff' }}>Tap to Start Playing</div>
               <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)' }}>Mobile requires a tap to unlock audio</div>
             </div>
           )}
 
-          {/* ── Player ── */}
-          <div style={{ padding: '14px 14px 10px', borderBottom: '1px solid var(--border)' }}>
-            <PlayerContent compact={true} />
-            {isHost && <div style={{ marginTop: 8, textAlign: 'center', background: 'rgba(243,156,18,0.08)', border: '1px solid rgba(243,156,18,0.25)', borderRadius: 8, padding: '4px 12px', fontFamily: 'Oswald', fontSize: '0.65rem', color: '#f39c12', letterSpacing: '0.1em', display: 'inline-block' }}>⭐ HOST</div>}
+          {/* ── Participants strip (top) ── */}
+          <div style={{ flexShrink: 0, borderBottom: '1px solid var(--border)', padding: '7px 12px', background: 'rgba(13,13,13,0.7)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' }}>
+              <style>{'.hide-scrollbar::-webkit-scrollbar{display:none}'}</style>
+              {isHost && (
+                <div onClick={() => toggleParticipantQueueAccess(roomId, !room.participantsCanAddToQueue)}
+                  style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 5, padding: '3px 8px', borderRadius: 8, border: `1px solid ${room.participantsCanAddToQueue ? 'rgba(0,255,136,0.4)' : 'var(--border)'}`, background: room.participantsCanAddToQueue ? 'rgba(0,255,136,0.08)' : 'transparent', cursor: 'pointer' }}>
+                  <div style={{ width: 26, height: 14, borderRadius: 7, background: room.participantsCanAddToQueue ? 'var(--green)' : 'rgba(255,255,255,0.12)', position: 'relative', flexShrink: 0, transition: 'background 0.3s' }}>
+                    <div style={{ position: 'absolute', top: 2, left: room.participantsCanAddToQueue ? 13 : 2, width: 10, height: 10, borderRadius: '50%', background: room.participantsCanAddToQueue ? '#000' : 'var(--text-dim)', transition: 'left 0.3s' }} />
+                  </div>
+                  <span style={{ fontFamily: 'Oswald', fontSize: '0.56rem', letterSpacing: '0.07em', textTransform: 'uppercase', color: room.participantsCanAddToQueue ? 'var(--green)' : 'var(--text-dim)', whiteSpace: 'nowrap' }}>Guests {room.participantsCanAddToQueue ? 'Can Add' : 'View Only'}</span>
+                </div>
+              )}
+              {[...(room.participants || [])].sort((a, b) => a.uid === room.hostId ? -1 : b.uid === room.hostId ? 1 : 0).map(p => (
+                <div key={p.uid} style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                  <div style={{ position: 'relative' }}>
+                    <Avatar user={p} size={26} />
+                    <span style={{ position: 'absolute', bottom: -1, right: -1, width: 7, height: 7, borderRadius: '50%', background: 'var(--green)', border: '1px solid var(--bg)', boxShadow: '0 0 4px var(--green)' }} />
+                  </div>
+                  <span style={{ fontSize: '0.5rem', color: p.uid === user?.uid ? 'var(--green)' : 'var(--text-dim)', maxWidth: 36, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {p.uid === room.hostId ? '⭐' : ''}{p.displayName?.split(' ')[0] || 'User'}
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
 
-          {/* ── Search & Queue ── */}
-          <div style={{ borderBottom: '1px solid var(--border)' }}>
-            <div style={{ height: 380, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          {/* ── Compact Player ── */}
+          <div style={{ flexShrink: 0, borderBottom: '1px solid var(--border)', padding: '10px 14px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
+            <PlayerContent compact={true} />
+          </div>
+
+          {/* ── Bottom 50/50: SearchAndQueue | Chat ── */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
+            <div style={{ flex: 1, overflow: 'hidden', minHeight: 0 }}>
               <SearchAndQueue room={room} isHost={isHost} canAdd={canAdd} onAddToQueue={handleAddToQueue} onPlayNow={handlePlayNow} onRemove={i => isHost && removeFromQueue(roomId, i)} ytAccessToken={user?.youtubeAccessToken} />
             </div>
-          </div>
-
-          {/* ── Chat ── */}
-          <div style={{ borderBottom: '1px solid var(--border)' }}>
-            <div style={{ padding: '10px 14px 8px', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: '0.9rem' }}>💬</span>
-              <span style={{ fontFamily: 'Oswald', fontSize: '0.7rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-dim)' }}>Chat</span>
-            </div>
-            <div style={{ height: 340, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div style={{ height: 1, background: 'var(--border)', flexShrink: 0 }} />
+            <div style={{ flex: 1, overflow: 'hidden', minHeight: 0 }}>
               <ChatPanel roomId={roomId} messages={messages} currentUser={user} />
             </div>
           </div>
 
-          {/* ── People ── */}
-          <div style={{ borderBottom: '1px solid var(--border)' }}>
-            <div style={{ padding: '10px 14px 8px', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: '0.9rem' }}>👥</span>
-              <span style={{ fontFamily: 'Oswald', fontSize: '0.7rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-dim)' }}>People</span>
-            </div>
-            <div style={{ maxHeight: 280, overflowY: 'auto' }}>
-              <ParticipantsPanel room={room} currentUser={user} isHost={isHost} roomId={roomId} />
-            </div>
-          </div>
-
-          {/* ── AI Bond ── */}
-          <div style={{ borderBottom: '1px solid var(--border)' }}>
-            <div style={{ height: 520, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-              <AIBondPanel room={room} canAdd={canAdd} onAddToQueue={handleAddToQueue} ytAccessToken={user?.youtubeAccessToken} />
-            </div>
-          </div>
-
-          {/* Bottom spacer */}
-          <div style={{ height: 24 }} />
         </div>
       </div>
     )
