@@ -183,25 +183,74 @@ function PlaylistPanel({ onAddToQueue, canAdd, ytAccessToken }) {
 // ─── Search & Queue Panel ───
 function SearchAndQueue({ room, isHost, canAdd, onAddToQueue, onPlayNow, onRemove, ytAccessToken }) {
   const [query, setQuery] = useState('')
-  const [results, setResults] = useState([])
+  const [globalResults, setGlobalResults] = useState([])
+  const [playlistResults, setPlaylistResults] = useState([])
   const [searching, setSearching] = useState(false)
   const [tab, setTab] = useState('search') // 'search' | 'queue' | 'playlists'
   const debRef = useRef(null)
+  const playlistCacheRef = useRef(null) // cached [{videoId, title, channelTitle, thumbnail, durationFormatted, playlistName}]
+
+  async function loadPlaylistCache() {
+    if (playlistCacheRef.current || !ytAccessToken) return
+    try {
+      const plRes = await fetch('/api/youtube/playlists', { headers: { Authorization: `Bearer ${ytAccessToken}` } })
+      const plData = await plRes.json()
+      const playlists = (plData.playlists || []).slice(0, 5)
+      const allTracks = []
+      await Promise.all(playlists.map(async (pl) => {
+        try {
+          const res = await fetch(`/api/youtube/playlistItems?playlistId=${pl.id}`, { headers: { Authorization: `Bearer ${ytAccessToken}` } })
+          const data = await res.json()
+          ;(data.results || []).forEach(t => allTracks.push({ ...t, playlistName: pl.title }))
+        } catch {}
+      }))
+      playlistCacheRef.current = allTracks
+    } catch {}
+  }
 
   function handleSearch(q) {
     setQuery(q)
     clearTimeout(debRef.current)
-    if (!q.trim()) { setResults([]); return }
+    if (!q.trim()) { setGlobalResults([]); setPlaylistResults([]); return }
     debRef.current = setTimeout(async () => {
       setSearching(true)
       try {
+        // Load playlist cache if not yet loaded
+        await loadPlaylistCache()
+        // Filter playlist cache
+        if (playlistCacheRef.current) {
+          const filtered = playlistCacheRef.current.filter(t =>
+            t.title.toLowerCase().includes(q.toLowerCase()) ||
+            (t.channelTitle || '').toLowerCase().includes(q.toLowerCase())
+          ).slice(0, 6)
+          setPlaylistResults(filtered)
+        }
+        // Global YouTube search
         const res = await fetch(`/api/youtube/search?q=${encodeURIComponent(q)}&limit=8`)
         const data = await res.json()
-        setResults(data.results || [])
+        setGlobalResults(data.results || [])
       } catch { toast.error('Search failed') }
       finally { setSearching(false) }
     }, 500)
   }
+
+  const TrackRow = ({ track, showPlaylist }) => (
+    <div style={{ display: 'flex', gap: 8, padding: '6px 8px', borderRadius: 8, alignItems: 'center' }}
+      onMouseEnter={e => e.currentTarget.style.background = 'var(--glass-hover)'}
+      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+      <img src={track.thumbnail} alt="" style={{ width: 52, height: 36, borderRadius: 4, objectFit: 'cover', flexShrink: 0 }} />
+      <div style={{ flex: 1, overflow: 'hidden' }}>
+        <div style={{ fontSize: '0.75rem', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{track.title}</div>
+        <div style={{ fontSize: '0.68rem', color: 'var(--text-dim)' }}>
+          {track.channelTitle}{track.durationFormatted ? ` · ${track.durationFormatted}` : ''}
+          {showPlaylist && track.playlistName && <span style={{ color: 'rgba(0,255,136,0.6)', marginLeft: 4 }}>· {track.playlistName}</span>}
+        </div>
+      </div>
+      {canAdd && (
+        <button onClick={() => { onAddToQueue(track); toast.success('Added!') }} style={{ background: 'rgba(0,255,136,0.1)', border: '1px solid rgba(0,255,136,0.3)', color: 'var(--green)', borderRadius: 6, padding: '4px 10px', fontSize: '0.7rem', cursor: 'pointer', fontFamily: 'Oswald', flexShrink: 0 }}>+ ADD</button>
+      )}
+    </div>
+  )
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
@@ -253,37 +302,39 @@ function SearchAndQueue({ room, isHost, canAdd, onAddToQueue, onPlayNow, onRemov
         <>
           <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
             <div style={{ position: 'relative' }}>
-              <input type="text" value={query} onChange={e => handleSearch(e.target.value)} placeholder="Search YouTube…" className="input-vibe" style={{ fontSize: '0.85rem', padding: '10px 36px 10px 12px' }} />
+              <input type="text" value={query} onChange={e => handleSearch(e.target.value)} placeholder="Search songs, artists…" className="input-vibe" style={{ fontSize: '0.85rem', padding: '10px 36px 10px 12px' }} />
               <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)' }}>{searching ? '⏳' : '🔍'}</span>
             </div>
           </div>
 
           <div style={{ flex: 1, overflowY: 'auto' }}>
-            {results.length > 0 ? (
+            {(globalResults.length > 0 || playlistResults.length > 0) ? (
               <div style={{ padding: '8px' }}>
-                <div style={{ fontFamily: 'Oswald', fontSize: '0.65rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-dim)', padding: '4px 6px 8px' }}>Results</div>
-                {results.map(track => (
-                  <div key={track.videoId} style={{ display: 'flex', gap: 8, padding: '6px 8px', borderRadius: 8, alignItems: 'center' }}
-                    onMouseEnter={e => e.currentTarget.style.background = 'var(--glass-hover)'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                    <img src={track.thumbnail} alt="" style={{ width: 52, height: 36, borderRadius: 4, objectFit: 'cover', flexShrink: 0 }} />
-                    <div style={{ flex: 1, overflow: 'hidden' }}>
-                      <div style={{ fontSize: '0.75rem', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{track.title}</div>
-                      <div style={{ fontSize: '0.68rem', color: 'var(--text-dim)' }}>{track.channelTitle} · {track.durationFormatted}</div>
+                {playlistResults.length > 0 && (
+                  <>
+                    <div style={{ fontFamily: 'Oswald', fontSize: '0.65rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(0,255,136,0.7)', padding: '4px 6px 6px', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      📋 From Your Playlists
                     </div>
-                    {canAdd && (
-                      <button onClick={() => { onAddToQueue(track); toast.success('Added!') }} style={{ background: 'rgba(0,255,136,0.1)', border: '1px solid rgba(0,255,136,0.3)', color: 'var(--green)', borderRadius: 6, padding: '4px 10px', fontSize: '0.7rem', cursor: 'pointer', fontFamily: 'Oswald', flexShrink: 0 }}>+ ADD</button>
-                    )}
-                  </div>
-                ))}
+                    {playlistResults.map(track => <TrackRow key={track.videoId + '-pl'} track={track} showPlaylist={true} />)}
+                    <div style={{ height: 1, background: 'var(--border)', margin: '8px 6px' }} />
+                  </>
+                )}
+                {globalResults.length > 0 && (
+                  <>
+                    <div style={{ fontFamily: 'Oswald', fontSize: '0.65rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-dim)', padding: '4px 6px 6px' }}>
+                      🌍 YouTube Results
+                    </div>
+                    {globalResults.map(track => <TrackRow key={track.videoId} track={track} showPlaylist={false} />)}
+                  </>
+                )}
               </div>
             ) : query && !searching ? (
               <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-dim)', fontSize: '0.85rem' }}>No results</div>
             ) : (
               <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-dim)' }}>
                 <div style={{ fontSize: '1.8rem', marginBottom: 10 }}>🔍</div>
-                <div style={{ fontSize: '0.82rem' }}>Type above to search YouTube</div>
-                <div style={{ fontSize: '0.75rem', marginTop: 6, color: 'var(--text-dim)' }}>Switch to the Queue tab to manage tracks</div>
+                <div style={{ fontSize: '0.82rem' }}>Search songs or artists</div>
+                <div style={{ fontSize: '0.75rem', marginTop: 6, color: 'var(--text-dim)' }}>Shows results from your playlists + YouTube</div>
               </div>
             )}
           </div>
