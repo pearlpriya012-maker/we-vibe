@@ -37,7 +37,7 @@ Respond ONLY with valid JSON in this exact format, no markdown, no extra text:
         Authorization: `Bearer ${GROQ_API_KEY}`,
       },
       body: JSON.stringify({
-        model: 'llama3-8b-8192',
+        model: 'llama-3.3-70b-versatile',
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.8,
         max_tokens: 1024,
@@ -47,7 +47,7 @@ Respond ONLY with valid JSON in this exact format, no markdown, no extra text:
     if (!response.ok) {
       const err = await response.text()
       console.error('Groq error:', err)
-      return NextResponse.json({ error: 'Groq API error' }, { status: 500 })
+      return NextResponse.json({ error: err }, { status: 500 })
     }
 
     const data = await response.json()
