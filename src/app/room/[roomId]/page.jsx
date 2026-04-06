@@ -402,9 +402,10 @@ function AIPanel({ room, canAdd, onAddToQueue }) {
     try {
       const res = await fetch('/api/groq/recommendations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ currentTrack: room?.currentTrack, queueTitles: (room?.queue || []).slice(0, 5).map(t => t.title), participantCount: room?.participants?.length || 1 }) })
       const data = await res.json()
+      if (data.error) { toast.error('AI error: ' + data.error); return }
       setRecs(data.recommendations || [])
       setFetched(true)
-    } catch { toast.error('AI failed') } finally { setLoading(false) }
+    } catch (e) { toast.error('AI failed: ' + e.message) } finally { setLoading(false) }
   }
   async function handleAdd(rec) {
     try {

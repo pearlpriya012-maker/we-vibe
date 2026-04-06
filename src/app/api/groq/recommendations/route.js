@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server'
 export async function POST(request) {
   const { currentTrack, queueTitles = [], participantCount = 1 } = await request.json()
 
-  const GROQ_API_KEY = process.env.GROQ_API_KEY
+  const GROQ_API_KEY = process.env.GROQ_API_KEY?.trim()
   if (!GROQ_API_KEY) return NextResponse.json({ error: 'Groq API not configured' }, { status: 500 })
 
   const prompt = `You are a music recommendation AI for a collaborative listening room.
