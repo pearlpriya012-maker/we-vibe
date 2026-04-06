@@ -115,7 +115,9 @@ function PlaylistPanel({ onAddToQueue, canAdd, ytAccessToken }) {
     setView('tracks')
     setLoading(true)
     try {
-      const res = await fetch(`/api/youtube/search?q=playlist:${playlistId}&limit=20`)
+      const res = await fetch(`/api/youtube/playlistItems?playlistId=${playlistId}`, {
+        headers: { Authorization: `Bearer ${ytAccessToken || ''}` }
+      })
       const data = await res.json()
       setTracks(data.results || [])
     } catch {
