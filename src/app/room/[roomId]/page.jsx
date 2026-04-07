@@ -1039,6 +1039,37 @@ export default function RoomPage() {
     return () => clearInterval(iv)
   }, [isHost, room?.isPlaying, roomId])
 
+  // ─── Host: follow Firestore when Full Access is on (guests can command the room) ───
+  useEffect(() => {
+    if (!room || !isHost || !room.participantsFullControl) return
+    try {
+      const p = ytPlayerRef.current
+      if (!p) return
+      const vid = p.getVideoData?.()?.video_id
+      if (room.currentTrack?.videoId && vid !== room.currentTrack.videoId) {
+        p.loadVideoById({ videoId: room.currentTrack.videoId, startSeconds: room.currentTime || 0 })
+        return
+      }
+      const state = p.getPlayerState?.()
+      if (room.isPlaying && state !== 1) p.playVideo?.()
+      else if (!room.isPlaying && (state === 1 || state === 3)) p.pauseVideo?.()
+    } catch {}
+  }, [room?.isPlaying, room?.currentTrack?.videoId, room?.participantsFullControl])
+
+  // ─── All players: seek when an explicit seekCommand is issued ───
+  useEffect(() => {
+    if (!room?.seekCommand) return
+    const age = Date.now() - (room.seekCommand.at || 0)
+    if (age > 5000) return // stale, ignore
+    if (seekLock.current) return // we just seeked ourselves
+    try {
+      const p = ytPlayerRef.current
+      if (!p) return
+      p.seekTo(room.seekCommand.time, true)
+      setCurrentTime(room.seekCommand.time)
+    } catch {}
+  }, [room?.seekCommand?.at])
+
   function handlePlayerReady(e) {
     try {
       ytPlayerRef.current = e.target
@@ -1081,7 +1112,12 @@ export default function RoomPage() {
       const p = ytPlayerRef.current
       p?.seekTo?.(seekTo, true)
       setCurrentTime(seekTo)
-      await updatePlayback(roomId, { currentTime: seekTo })
+      const { updateDoc, doc } = await import('firebase/firestore')
+      const { db } = await import('@/lib/firebase')
+      await updateDoc(doc(db, 'rooms', roomId), {
+        currentTime: seekTo,
+        seekCommand: { time: seekTo, at: Date.now() },
+      })
     } catch {}
     setTimeout(() => { seekLock.current = false }, 1500)
   }
