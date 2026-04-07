@@ -912,7 +912,11 @@ export default function RoomPage() {
 
   // ─── Mobile detection ───
   useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < 768)
+    const check = () => {
+      const m = window.innerWidth < 768
+      setIsMobile(m)
+      if (!m) setMobileTapped(true) // desktop: audio always unlocked, no tap gate needed
+    }
     check()
     window.addEventListener('resize', check)
     return () => window.removeEventListener('resize', check)
@@ -973,51 +977,24 @@ export default function RoomPage() {
     prevTrackRef.current = curr || null
   }, [room?.currentTrack?.videoId])
 
-  // ─── Mobile: after audio unlock, auto-play when track changes ───
-  useEffect(() => {
-    if (!isMobile || !mobileTapped || !room?.currentTrack?.videoId || !room?.isPlaying) return
-    const t = setTimeout(() => {
-      try {
-        const p = ytPlayerRef.current
-        if (!p) return
-        const state = p.getPlayerState?.()
-        if (state !== 1) p.playVideo?.()
-      } catch {}
-    }, 400)
-    return () => clearTimeout(t)
-  }, [room?.currentTrack?.videoId, mobileTapped, isMobile])
-
-  // ─── Non-host sync ───
+  // ─── Non-host sync — audio always unlocked here (past entry gate) ───
   useEffect(() => {
     if (!room || isHost) return
-    
-    // Debounce: skip if we just updated Firebase ourselves (prevents sync loops)
     const now = Date.now()
     if (now - lastUpdateRef.current < 1000) return
-    
     try {
       const p = ytPlayerRef.current
       if (!p) return
       const vid = p.getVideoData?.()?.video_id
       if (room.currentTrack?.videoId && vid !== room.currentTrack.videoId) {
-        if (isMobile && !mobileTapped) {
-          // Audio not yet unlocked — cue only, guest will tap the button to start
-          p.cueVideoById({ videoId: room.currentTrack.videoId, startSeconds: room.currentTime || 0 })
-        } else if (isMobile && mobileTapped) {
-          // Audio already unlocked by prior user tap — iOS allows programmatic playVideo() now
-          p.cueVideoById({ videoId: room.currentTrack.videoId, startSeconds: room.currentTime || 0 })
-          setTimeout(() => { try { p.playVideo?.() } catch {} }, 400)
-        } else {
-          p.loadVideoById({ videoId: room.currentTrack.videoId, startSeconds: room.currentTime || 0 })
-        }
+        p.loadVideoById({ videoId: room.currentTrack.videoId, startSeconds: room.currentTime || 0 })
         return
       }
-      // Guard: only toggle if state actually differs — prevents playVideo() spam
       const state = p.getPlayerState?.()
-      if (room.isPlaying && state !== 1 && (!isMobile || mobileTapped)) p.playVideo?.()
+      if (room.isPlaying && state !== 1) p.playVideo?.()
       else if (!room.isPlaying && state !== 2) p.pauseVideo?.()
     } catch {}
-  }, [room?.isPlaying, room?.currentTrack?.videoId, isHost, mobileTapped])
+  }, [room?.isPlaying, room?.currentTrack?.videoId, isHost])
 
   // ─── Host: push timestamp every 5s ───
   useEffect(() => {
@@ -1035,14 +1012,9 @@ export default function RoomPage() {
     try {
       ytPlayerRef.current = e.target
       if (!room?.currentTrack?.videoId) return
-      if (isMobile) {
-        // Mobile: ALWAYS cue only — never autoplay from code, user tap triggers playVideo()
-        e.target.cueVideoById({ videoId: room.currentTrack.videoId, startSeconds: room.currentTime || 0 })
-      } else {
-        // Desktop: autoplay is fine
-        if (room.isPlaying) e.target.loadVideoById({ videoId: room.currentTrack.videoId, startSeconds: room.currentTime || 0 })
-        else e.target.cueVideoById({ videoId: room.currentTrack.videoId, startSeconds: room.currentTime || 0 })
-      }
+      // Audio is always unlocked here — either desktop, or user already tapped Enter Room
+      if (room.isPlaying) e.target.loadVideoById({ videoId: room.currentTrack.videoId, startSeconds: room.currentTime || 0 })
+      else e.target.cueVideoById({ videoId: room.currentTrack.videoId, startSeconds: room.currentTime || 0 })
     } catch {}
   }
 
@@ -1061,12 +1033,7 @@ export default function RoomPage() {
     lastUpdateRef.current = Date.now()
     const p = ytPlayerRef.current
     if (!p) return
-    setMobileTapped(true)
-    // Use ACTUAL player state — not room.isPlaying — because on mobile the player
-    // is cued (not playing) while Firebase already says isPlaying:true
-    const state = p.getPlayerState?.()
-    const actuallyPlaying = state === 1 // YT.PlayerState.PLAYING
-    if (actuallyPlaying) {
+    if (room.isPlaying) {
       p.pauseVideo()
       await updatePlayback(roomId, { isPlaying: false, currentTime: p.getCurrentTime() })
     } else {
@@ -1166,6 +1133,37 @@ export default function RoomPage() {
     </div>
   )
 
+  // ─── Mobile: one-time entry gate — this tap unlocks audio for the ENTIRE session ───
+  if (isMobile && !mobileTapped) {
+    return (
+      <div
+        onClick={() => {
+          // Resume AudioContext — permanently unlocks audio for this browser session
+          try { const AC = window.AudioContext || window.webkitAudioContext; if (AC) new AC().resume() } catch {}
+          setMobileTapped(true)
+        }}
+        style={{ minHeight: '100dvh', background: 'var(--bg)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24, padding: 32, cursor: 'pointer', position: 'relative', overflow: 'hidden' }}
+      >
+        <div className="grid-bg" />
+        <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
+          <div style={{ fontSize: '3.5rem' }}>🕊️</div>
+          <div style={{ fontFamily: 'Oswald', fontSize: '2rem', fontWeight: 700, color: 'var(--green)', letterSpacing: '0.12em', textShadow: '0 0 30px rgba(0,255,136,0.5)' }}>WE VIBE</div>
+          <div style={{ fontFamily: 'Oswald', fontSize: '0.85rem', color: 'var(--text-dim)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>{room.name || 'ROOM'}</div>
+          {room.currentTrack && (
+            <div style={{ textAlign: 'center', padding: '12px 20px', background: 'rgba(0,255,136,0.06)', border: '1px solid rgba(0,255,136,0.2)', borderRadius: 12, maxWidth: 260 }}>
+              <div style={{ fontSize: '0.65rem', color: 'var(--green)', fontFamily: 'Oswald', letterSpacing: '0.12em', marginBottom: 6 }}>NOW PLAYING</div>
+              <div style={{ fontSize: '0.88rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{room.currentTrack.title}</div>
+            </div>
+          )}
+          <button style={{ marginTop: 8, background: 'var(--green)', color: '#000', border: 'none', borderRadius: 50, padding: '16px 52px', fontFamily: 'Oswald', fontSize: '1.1rem', letterSpacing: '0.14em', fontWeight: 700, boxShadow: '0 0 40px rgba(0,255,136,0.45)', cursor: 'pointer' }}>
+            ▶ ENTER ROOM
+          </button>
+          <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.25)', fontFamily: 'Oswald', letterSpacing: '0.08em' }}>TAP ANYWHERE TO CONTINUE</div>
+        </div>
+      </div>
+    )
+  }
+
   // ─── Shared: hidden YT player (always in DOM) ───
   const hiddenPlayer = room.currentTrack ? (
     <div style={{ position: 'fixed', width: 1, height: 1, opacity: 0, pointerEvents: 'none', overflow: 'hidden', zIndex: -1, top: 0, left: 0 }}
@@ -1187,7 +1185,7 @@ export default function RoomPage() {
       <YouTube
         ref={playerRef}
         videoId={room.currentTrack.videoId}
-        opts={{ width: '640', height: '360', playerVars: { autoplay: isMobile ? 0 : 1, controls: 0, modestbranding: 1, rel: 0, playsinline: 1, fs: 0 } }}
+        opts={{ width: '640', height: '360', playerVars: { autoplay: 1, controls: 0, modestbranding: 1, rel: 0, playsinline: 1, fs: 0 } }}
         onReady={handlePlayerReady}
         onStateChange={handleStateChange}
         style={{ width: '100%', height: '100%' }}
@@ -1242,33 +1240,15 @@ export default function RoomPage() {
             <ProgressBar currentTime={currentTime} duration={duration} isHost={isHost} canControl={canControl} onSeek={handleSeek} />
           </div>
           {canControl ? (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-              {/* Mobile: show TAP TO HEAR for everyone until audio is unlocked — tapping ⏸ would wrongly pause for all */}
-              {isMobile && !mobileTapped && room.isPlaying ? (
-                <button
-                  onClick={() => { setMobileTapped(true); try { ytPlayerRef.current?.playVideo?.() } catch {} }}
-                  style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(0,255,136,0.15)', border: '1px solid rgba(0,255,136,0.5)', borderRadius: 24, padding: '10px 22px', cursor: 'pointer', fontFamily: 'Oswald', fontSize: '0.85rem', letterSpacing: '0.1em', color: 'var(--green)', boxShadow: '0 0 16px rgba(0,255,136,0.25)' }}
-                >🔊 TAP TO HEAR</button>
-              ) : (
-                <div style={{ display: 'flex', alignItems: 'center', gap: compact ? 12 : 16, justifyContent: 'center' }}>
-                  <button onClick={handlePlayPause} style={{ width: compact ? 46 : 52, height: compact ? 46 : 52, borderRadius: '50%', background: 'var(--green)', border: 'none', cursor: 'pointer', fontSize: compact ? '1rem' : '1.2rem', color: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 20px rgba(0,255,136,0.4)', transition: 'transform 0.15s' }}>{room.isPlaying ? '⏸' : '▶'}</button>
-                  <button onClick={() => skipToNext(roomId)} style={{ width: compact ? 36 : 40, height: compact ? 36 : 40, borderRadius: '50%', background: 'var(--glass)', border: '1px solid var(--border)', cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}>⏭</button>
-                  {volumeWidget}
-                </div>
-              )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: compact ? 12 : 16, justifyContent: 'center' }}>
+              <button onClick={handlePlayPause} style={{ width: compact ? 46 : 52, height: compact ? 46 : 52, borderRadius: '50%', background: 'var(--green)', border: 'none', cursor: 'pointer', fontSize: compact ? '1rem' : '1.2rem', color: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 20px rgba(0,255,136,0.4)', transition: 'transform 0.15s' }}>{room.isPlaying ? '⏸' : '▶'}</button>
+              <button onClick={() => skipToNext(roomId)} style={{ width: compact ? 36 : 40, height: compact ? 36 : 40, borderRadius: '50%', background: 'var(--glass)', border: '1px solid var(--border)', cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}>⏭</button>
+              {volumeWidget}
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-              {isMobile && !mobileTapped && room.isPlaying && (
-                <button
-                  onClick={() => { setMobileTapped(true); try { ytPlayerRef.current?.playVideo?.() } catch {} }}
-                  style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(0,255,136,0.15)', border: '1px solid rgba(0,255,136,0.5)', borderRadius: 24, padding: '10px 22px', cursor: 'pointer', fontFamily: 'Oswald', fontSize: '0.85rem', letterSpacing: '0.1em', color: 'var(--green)', boxShadow: '0 0 16px rgba(0,255,136,0.25)' }}
-                >🔊 TAP TO HEAR</button>
-              )}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{ textAlign: 'center', color: 'var(--text-dim)', fontSize: '0.8rem', fontStyle: 'italic' }}>{room.isPlaying ? '▶ Playing • Synced with host' : '⏸ Paused by host'}</div>
-                {volumeWidget}
-              </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+              <div style={{ textAlign: 'center', color: 'var(--text-dim)', fontSize: '0.8rem', fontStyle: 'italic' }}>{room.isPlaying ? '▶ Playing • Synced with host' : '⏸ Paused by host'}</div>
+              {volumeWidget}
             </div>
           )}
         </div>
