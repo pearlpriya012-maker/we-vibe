@@ -94,11 +94,12 @@ function PlaylistPanel({ onAddToQueue, canAdd, ytAccessToken, onStartPlaylist, o
   const [view, setView] = useState('playlists') // 'playlists' | 'tracks'
 
   useEffect(() => {
+    if (!ytToken) { setPlaylists([]); return }
     async function loadPlaylists() {
       setLoading(true)
       try {
         const res = await fetch('/api/youtube/playlists', {
-          headers: { Authorization: `Bearer ${ytAccessToken || ''}` }
+          headers: { Authorization: `Bearer ${ytToken}` }
         })
         const data = await res.json()
         setPlaylists(data.playlists || [])
@@ -109,7 +110,7 @@ function PlaylistPanel({ onAddToQueue, canAdd, ytAccessToken, onStartPlaylist, o
       }
     }
     loadPlaylists()
-  }, [])
+  }, [ytToken])
 
   async function loadPlaylistTracks(playlistId, title, thumbnail) {
     setSelectedPlaylist(title)
@@ -130,6 +131,14 @@ function PlaylistPanel({ onAddToQueue, canAdd, ytAccessToken, onStartPlaylist, o
   }
 
   if (loading) return <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-dim)' }}><span className="spinner" /></div>
+
+  if (!ytAccessToken) return (
+    <div style={{ padding: 24, textAlign: 'center' }}>
+      <div style={{ fontSize: '1.5rem', marginBottom: 8 }}>📋</div>
+      <div style={{ color: 'var(--text-dim)', fontSize: '0.8rem', marginBottom: 12 }}>Connect YouTube in Settings to see your playlists</div>
+      <Link href="/settings" className="btn-ghost" style={{ fontSize: '0.8rem', padding: '8px 16px' }}>Go to Settings →</Link>
+    </div>
+  )
 
   if (view === 'tracks') return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
@@ -178,8 +187,7 @@ function PlaylistPanel({ onAddToQueue, canAdd, ytAccessToken, onStartPlaylist, o
       {playlists.length === 0 ? (
         <div style={{ padding: 24, textAlign: 'center' }}>
           <div style={{ fontSize: '1.5rem', marginBottom: 8 }}>📋</div>
-          <div style={{ color: 'var(--text-dim)', fontSize: '0.8rem', marginBottom: 12 }}>Link your YouTube account in Settings to see your playlists</div>
-          <Link href="/settings" className="btn-ghost" style={{ fontSize: '0.8rem', padding: '8px 16px' }}>Go to Settings →</Link>
+          <div style={{ color: 'var(--text-dim)', fontSize: '0.8rem', marginBottom: 12 }}>No playlists found on your YouTube account</div>
         </div>
       ) : playlists.map(pl => (
         <div key={pl.id} onClick={() => loadPlaylistTracks(pl.id, pl.title, pl.thumbnail)} style={{ display: 'flex', gap: 10, padding: '8px 10px', borderRadius: 8, alignItems: 'center', cursor: 'pointer', transition: 'background 0.15s' }}
@@ -817,6 +825,7 @@ export default function RoomPage() {
   const lastUpdateRef = useRef(0)  // Track recent updates to prevent sync loops
   const [playedHistory, setPlayedHistory] = useState([])
   const prevTrackRef = useRef(null)
+  const [ytToken, setYtToken] = useState(user?.youtubeAccessToken || null)
 
   const isHost = room?.hostId === user?.uid
   // canAdd = can add songs AND control playback (when host grants access)
@@ -828,6 +837,20 @@ export default function RoomPage() {
     if (!user) { router.replace('/auth/login'); return }
     return subscribeToRoom(roomId, data => { setRoom(data); setLoading(false) })
   }, [roomId, user])
+
+  // ─── Live YouTube token from Firestore (refreshes when user connects in Settings) ───
+  useEffect(() => {
+    if (!user?.uid) return
+    let unsub
+    import('firebase/firestore').then(({ onSnapshot, doc: firestoreDoc }) => {
+      import('@/lib/firebase').then(({ db: firestoreDb }) => {
+        unsub = onSnapshot(firestoreDoc(firestoreDb, 'users', user.uid), snap => {
+          if (snap.exists()) setYtToken(snap.data().youtubeAccessToken || null)
+        })
+      })
+    })
+    return () => unsub?.()
+  }, [user?.uid])
 
   useEffect(() => {
     if (!roomId) return
@@ -1269,10 +1292,10 @@ export default function RoomPage() {
           {/* ── Tab Content ── */}
           <div style={{ flex: 1, overflow: 'hidden', minHeight: 0, position: 'relative' }}>
             <div style={{ display: mobileTab === 'search' || mobileTab === 'queue' || mobileTab === 'playlists' ? 'flex' : 'none', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-              <SearchAndQueue room={room} isHost={isHost} canAdd={canAdd} onAddToQueue={handleAddToQueue} onPlayNow={handlePlayNow} onRemove={i => isHost && removeFromQueue(roomId, i)} ytAccessToken={user?.youtubeAccessToken} initialTab={mobileTab === 'playlists' ? 'playlists' : mobileTab === 'queue' ? 'queue' : 'search'} hideTabs={true} roomId={roomId} playedHistory={playedHistory} onStartPlaylist={handleStartPlaylist} onShufflePlaylist={handleShufflePlaylist} />
+              <SearchAndQueue room={room} isHost={isHost} canAdd={canAdd} onAddToQueue={handleAddToQueue} onPlayNow={handlePlayNow} onRemove={i => isHost && removeFromQueue(roomId, i)} ytAccessToken={ytToken} initialTab={mobileTab === 'playlists' ? 'playlists' : mobileTab === 'queue' ? 'queue' : 'search'} hideTabs={true} roomId={roomId} playedHistory={playedHistory} onStartPlaylist={handleStartPlaylist} onShufflePlaylist={handleShufflePlaylist} />
             </div>
             <div style={{ display: mobileTab === 'aibond' ? 'flex' : 'none', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-              <AIBondPanel room={room} canAdd={canAdd} onAddToQueue={handleAddToQueue} ytAccessToken={user?.youtubeAccessToken} />
+              <AIBondPanel room={room} canAdd={canAdd} onAddToQueue={handleAddToQueue} ytAccessToken={ytToken} />
             </div>
             <div style={{ display: mobileTab === 'chat' ? 'flex' : 'none', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
               <ChatPanel roomId={roomId} messages={messages} currentUser={user} />
@@ -1353,7 +1376,7 @@ export default function RoomPage() {
                   onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--green)'; e.currentTarget.style.color = 'var(--green)' }}
                   onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-dim)' }}>◀</button>
               </div>
-              <SearchAndQueue room={room} isHost={isHost} canAdd={canAdd} onAddToQueue={handleAddToQueue} onPlayNow={handlePlayNow} onRemove={i => isHost && removeFromQueue(roomId, i)} ytAccessToken={user?.youtubeAccessToken} roomId={roomId} playedHistory={playedHistory} onStartPlaylist={handleStartPlaylist} onShufflePlaylist={handleShufflePlaylist} />
+              <SearchAndQueue room={room} isHost={isHost} canAdd={canAdd} onAddToQueue={handleAddToQueue} onPlayNow={handlePlayNow} onRemove={i => isHost && removeFromQueue(roomId, i)} ytAccessToken={ytToken} roomId={roomId} playedHistory={playedHistory} onStartPlaylist={handleStartPlaylist} onShufflePlaylist={handleShufflePlaylist} />
             </>
           )}
         </div>
@@ -1416,7 +1439,7 @@ export default function RoomPage() {
           <div style={{ flex: 1, overflow: 'hidden' }}>
             {rightTab === 'chat' && <ChatPanel roomId={roomId} messages={messages} currentUser={user} />}
             {rightTab === 'participants' && <ParticipantsPanel room={room} currentUser={user} isHost={isHost} roomId={roomId} />}
-            {rightTab === 'ai' && <AIBondPanel room={room} canAdd={canAdd} onAddToQueue={handleAddToQueue} ytAccessToken={user?.youtubeAccessToken} />}
+            {rightTab === 'ai' && <AIBondPanel room={room} canAdd={canAdd} onAddToQueue={handleAddToQueue} ytAccessToken={ytToken} />}
           </div>
         </div>
       </div>
