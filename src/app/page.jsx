@@ -331,8 +331,8 @@ export default function LandingPage() {
         <div style={{ fontFamily: 'Oswald', fontSize: '1.2rem', fontWeight: 700, color: 'var(--green)', letterSpacing: '0.1em', textTransform: 'uppercase', textShadow: '0 0 15px rgba(0,255,136,0.4)' }}>WE🕊️</div>
         <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', fontStyle: 'italic' }}>🕊️ Vibe and Play, darling! Made with ❤️ by Team SPY</div>
         <div style={{ display: 'flex', gap: 24 }}>
-          {['About','Privacy','Terms','GitHub'].map(l => (
-            <Link key={l} href="#" style={{ color: 'var(--text-dim)', textDecoration: 'none', fontSize: '0.85rem', transition: 'color 0.2s' }}
+          {[['About','#'],['Privacy','/privacy'],['Terms','#'],['GitHub','https://github.com/pearlpriya012-maker/we-vibe-and-play']].map(([l,href]) => (
+            <Link key={l} href={href} style={{ color: 'var(--text-dim)', textDecoration: 'none', fontSize: '0.85rem', transition: 'color 0.2s' }}
               onMouseEnter={e => e.target.style.color = 'var(--green)'}
               onMouseLeave={e => e.target.style.color = 'var(--text-dim)'}
             >{l}</Link>
