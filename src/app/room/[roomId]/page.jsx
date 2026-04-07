@@ -1112,10 +1112,9 @@ export default function RoomPage() {
   }
 
   async function handlePlayerError(e) {
-    // error codes: 2=invalid id, 5=HTML5 error, 100=not found, 101/150=embedding not allowed
-    if (isHost) {
-      await skipToNext(roomId)
-    }
+    // error codes: 2=invalid id, 5=HTML5/mobile error, 100=not found, 101/150=embedding not allowed
+    // Any user can trigger the skip so mobile users don't get stuck on unplayable tracks
+    if (canControl) await skipToNext(roomId)
   }
 
   async function handlePlayPause() {
@@ -1253,41 +1252,30 @@ export default function RoomPage() {
   // ─── Mobile: one-time entry gate — this tap unlocks audio for the ENTIRE session ───
   if (isMobile && !mobileTapped) {
     return (
-      <>
-        {/* Pre-mount YouTube player (muted) so it's already loading when the user taps.
-            iOS only allows unMute() within a direct user-gesture — calling it here (in the
-            onClick) rather than in onReady guarantees the gesture context is still alive. */}
-        <div style={{ position: 'fixed', width: 1, height: 1, opacity: 0.001, pointerEvents: 'none', zIndex: -1, top: 0, left: 0 }}>
-          {ytPlayerEl}
+      <div
+        onClick={() => {
+          try { const AC = window.AudioContext || window.webkitAudioContext; if (AC) new AC().resume() } catch {}
+          setMobileTapped(true)
+        }}
+        style={{ minHeight: '100dvh', background: 'var(--bg)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24, padding: 32, cursor: 'pointer', position: 'relative', overflow: 'hidden' }}
+      >
+        <div className="grid-bg" />
+        <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
+          <div style={{ fontSize: '3.5rem' }}>🕊️</div>
+          <div style={{ fontFamily: 'Oswald', fontSize: '2rem', fontWeight: 700, color: 'var(--green)', letterSpacing: '0.12em', textShadow: '0 0 30px rgba(0,255,136,0.5)' }}>WE VIBE</div>
+          <div style={{ fontFamily: 'Oswald', fontSize: '0.85rem', color: 'var(--text-dim)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>{room.name || 'ROOM'}</div>
+          {room.currentTrack && (
+            <div style={{ textAlign: 'center', padding: '12px 20px', background: 'rgba(0,255,136,0.06)', border: '1px solid rgba(0,255,136,0.2)', borderRadius: 12, maxWidth: 260 }}>
+              <div style={{ fontSize: '0.65rem', color: 'var(--green)', fontFamily: 'Oswald', letterSpacing: '0.12em', marginBottom: 6 }}>NOW PLAYING</div>
+              <div style={{ fontSize: '0.88rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{room.currentTrack.title}</div>
+            </div>
+          )}
+          <button style={{ marginTop: 8, background: 'var(--green)', color: '#000', border: 'none', borderRadius: 50, padding: '16px 52px', fontFamily: 'Oswald', fontSize: '1.1rem', letterSpacing: '0.14em', fontWeight: 700, boxShadow: '0 0 40px rgba(0,255,136,0.45)', cursor: 'pointer' }}>
+            ▶ ENTER ROOM
+          </button>
+          <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.25)', fontFamily: 'Oswald', letterSpacing: '0.08em' }}>TAP ANYWHERE TO CONTINUE</div>
         </div>
-        <div
-          onClick={() => {
-            // Unmute directly inside user gesture — iOS requires this synchronous call
-            try { ytPlayerRef.current?.unMute?.(); ytPlayerRef.current?.setVolume?.(100) } catch {}
-            // Resume AudioContext for Web Audio API
-            try { const AC = window.AudioContext || window.webkitAudioContext; if (AC) new AC().resume() } catch {}
-            setMobileTapped(true)
-          }}
-          style={{ minHeight: '100dvh', background: 'var(--bg)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24, padding: 32, cursor: 'pointer', position: 'relative', overflow: 'hidden' }}
-        >
-          <div className="grid-bg" />
-          <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
-            <div style={{ fontSize: '3.5rem' }}>🕊️</div>
-            <div style={{ fontFamily: 'Oswald', fontSize: '2rem', fontWeight: 700, color: 'var(--green)', letterSpacing: '0.12em', textShadow: '0 0 30px rgba(0,255,136,0.5)' }}>WE VIBE</div>
-            <div style={{ fontFamily: 'Oswald', fontSize: '0.85rem', color: 'var(--text-dim)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>{room.name || 'ROOM'}</div>
-            {room.currentTrack && (
-              <div style={{ textAlign: 'center', padding: '12px 20px', background: 'rgba(0,255,136,0.06)', border: '1px solid rgba(0,255,136,0.2)', borderRadius: 12, maxWidth: 260 }}>
-                <div style={{ fontSize: '0.65rem', color: 'var(--green)', fontFamily: 'Oswald', letterSpacing: '0.12em', marginBottom: 6 }}>NOW PLAYING</div>
-                <div style={{ fontSize: '0.88rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{room.currentTrack.title}</div>
-              </div>
-            )}
-            <button style={{ marginTop: 8, background: 'var(--green)', color: '#000', border: 'none', borderRadius: 50, padding: '16px 52px', fontFamily: 'Oswald', fontSize: '1.1rem', letterSpacing: '0.14em', fontWeight: 700, boxShadow: '0 0 40px rgba(0,255,136,0.45)', cursor: 'pointer' }}>
-              ▶ ENTER ROOM
-            </button>
-            <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.25)', fontFamily: 'Oswald', letterSpacing: '0.08em' }}>TAP ANYWHERE TO CONTINUE</div>
-          </div>
-        </div>
-      </>
+      </div>
     )
   }
 
