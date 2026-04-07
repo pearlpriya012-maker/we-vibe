@@ -851,7 +851,6 @@ export default function RoomPage() {
   const tickRef = useRef(null)
   const volumePopupRef = useRef(null)
   const lastUpdateRef = useRef(0)  // Track recent updates to prevent sync loops
-  const [playedHistory, setPlayedHistory] = useState([])
   const prevTrackRef = useRef(null)
   const [ytToken, setYtToken] = useState(user?.youtubeAccessToken || null)
 
@@ -974,13 +973,19 @@ export default function RoomPage() {
     }
   }, [mobileTab])
 
-  // ─── Track played history ───
+  // ─── Track played history (host writes to Firestore; all clients read room.playedHistory) ───
   useEffect(() => {
     if (!room) return
     const curr = room.currentTrack
     const prev = prevTrackRef.current
-    if (prev && curr?.videoId !== prev.videoId) {
-      setPlayedHistory(h => [...h, prev])
+    if (isHost && prev && curr?.videoId !== prev.videoId) {
+      import('firebase/firestore').then(({ updateDoc, doc }) => {
+        import('@/lib/firebase').then(({ db: firestoreDb }) => {
+          updateDoc(doc(firestoreDb, 'rooms', roomId), {
+            playedHistory: [...(room.playedHistory || []).slice(-49), prev]
+          })
+        })
+      })
     }
     prevTrackRef.current = curr || null
   }, [room?.currentTrack?.videoId])
@@ -1103,7 +1108,7 @@ export default function RoomPage() {
   }
 
   async function handlePlayNow(track, index) {
-    if (!isHost) return
+    if (!canFullControl) return
     const newQueue = room.queue.filter((_, i) => i !== index)
     await setCurrentTrack(roomId, track)
     const { updateDoc, doc } = await import('firebase/firestore')
@@ -1113,21 +1118,21 @@ export default function RoomPage() {
 
   async function handlePreviousTrack() {
     if (!canFullControl) return
-    if (playedHistory.length === 0) {
+    const hist = room.playedHistory || []
+    if (hist.length === 0) {
       // Restart current track from beginning
       try { ytPlayerRef.current?.seekTo?.(0, true) } catch {}
       await updatePlayback(roomId, { currentTime: 0, isPlaying: true })
       return
     }
-    const prev = playedHistory[playedHistory.length - 1]
-    setPlayedHistory(h => h.slice(0, -1))
-    // Push current track back to front of queue
+    const prev = hist[hist.length - 1]
+    const newQueue = room.currentTrack ? [room.currentTrack, ...(room.queue || [])] : (room.queue || [])
     const { updateDoc, doc } = await import('firebase/firestore')
     const { db } = await import('@/lib/firebase')
-    const newQueue = room.currentTrack ? [room.currentTrack, ...(room.queue || [])] : (room.queue || [])
     await updateDoc(doc(db, 'rooms', roomId), {
       currentTrack: prev,
       queue: newQueue,
+      playedHistory: hist.slice(0, -1),
       currentTime: 0,
       isPlaying: true,
     })
@@ -1418,7 +1423,7 @@ export default function RoomPage() {
           {/* ── Tab Content ── */}
           <div style={{ flex: 1, overflow: 'hidden', minHeight: 0, position: 'relative' }}>
             <div style={{ display: mobileTab === 'search' || mobileTab === 'queue' || mobileTab === 'playlists' ? 'flex' : 'none', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-              <SearchAndQueue room={room} isHost={isHost} canAdd={canAdd} onAddToQueue={handleAddToQueue} onPlayNow={handlePlayNow} onRemove={i => isHost && removeFromQueue(roomId, i)} ytAccessToken={ytToken} initialTab={mobileTab === 'playlists' ? 'playlists' : mobileTab === 'queue' ? 'queue' : 'search'} hideTabs={true} roomId={roomId} playedHistory={playedHistory} onStartPlaylist={handleStartPlaylist} onShufflePlaylist={handleShufflePlaylist} onTokenExpired={refreshYtToken} />
+              <SearchAndQueue room={room} isHost={canFullControl} canAdd={canAdd} onAddToQueue={handleAddToQueue} onPlayNow={handlePlayNow} onRemove={i => canFullControl && removeFromQueue(roomId, i)} ytAccessToken={ytToken} initialTab={mobileTab === 'playlists' ? 'playlists' : mobileTab === 'queue' ? 'queue' : 'search'} hideTabs={true} roomId={roomId} playedHistory={room.playedHistory || []} onStartPlaylist={handleStartPlaylist} onShufflePlaylist={handleShufflePlaylist} onTokenExpired={refreshYtToken} />
             </div>
             <div style={{ display: mobileTab === 'aibond' ? 'flex' : 'none', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
               <AIBondPanel room={room} canAdd={canAdd} onAddToQueue={handleAddToQueue} ytAccessToken={ytToken} />
@@ -1502,7 +1507,7 @@ export default function RoomPage() {
                   onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--green)'; e.currentTarget.style.color = 'var(--green)' }}
                   onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-dim)' }}>◀</button>
               </div>
-              <SearchAndQueue room={room} isHost={isHost} canAdd={canAdd} onAddToQueue={handleAddToQueue} onPlayNow={handlePlayNow} onRemove={i => isHost && removeFromQueue(roomId, i)} ytAccessToken={ytToken} roomId={roomId} playedHistory={playedHistory} onStartPlaylist={handleStartPlaylist} onShufflePlaylist={handleShufflePlaylist} onTokenExpired={refreshYtToken} />
+              <SearchAndQueue room={room} isHost={canFullControl} canAdd={canAdd} onAddToQueue={handleAddToQueue} onPlayNow={handlePlayNow} onRemove={i => canFullControl && removeFromQueue(roomId, i)} ytAccessToken={ytToken} roomId={roomId} playedHistory={room.playedHistory || []} onStartPlaylist={handleStartPlaylist} onShufflePlaylist={handleShufflePlaylist} onTokenExpired={refreshYtToken} />
             </>
           )}
         </div>
