@@ -302,9 +302,14 @@ export async function addReaction(roomId, messageId, emoji, uid) {
   const snap = await getDoc(msgRef)
   if (!snap.exists()) return
   const reactions = snap.data().reactions || {}
-  const users = reactions[emoji] || []
-  const updated = users.includes(uid)
-    ? users.filter((u) => u !== uid) // toggle off
-    : [...users, uid]
-  await updateDoc(msgRef, { [`reactions.${emoji}`]: updated })
+  const alreadyOnThis = (reactions[emoji] || []).includes(uid)
+  // Build update: remove uid from every emoji, then toggle on the clicked one
+  const updates = {}
+  for (const e of Object.keys(reactions)) {
+    updates[`reactions.${e}`] = (reactions[e] || []).filter((u) => u !== uid)
+  }
+  if (!alreadyOnThis) {
+    updates[`reactions.${emoji}`] = [...(reactions[emoji] || []).filter((u) => u !== uid), uid]
+  }
+  await updateDoc(msgRef, updates)
 }
