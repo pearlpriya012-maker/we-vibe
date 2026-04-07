@@ -1268,7 +1268,7 @@ export default function RoomPage() {
           ? { position: 'fixed', top: 0, left: 0, width: 1, height: 1, opacity: 0.001, pointerEvents: 'none', zIndex: -1 }
           : { position: 'fixed', left: '-2000px', top: '-2000px', width: 320, height: 180, pointerEvents: 'none', zIndex: -1 })
       : isMobile
-        ? { width: '100%', aspectRatio: '16/9', borderRadius: 10, overflow: 'hidden', boxShadow: '0 8px 32px rgba(0,0,0,0.8)', flexShrink: 0 }
+        ? { width: '100%', aspectRatio: '16/9', overflow: 'hidden', flexShrink: 0 }
         : { width: '100%', maxWidth: videoFocus ? '100%' : 700, aspectRatio: '16/9', borderRadius: videoFocus ? 0 : 12, overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.8)', flexShrink: 0 }
     }>
       <YouTube
@@ -1312,12 +1312,30 @@ export default function RoomPage() {
     return room.currentTrack ? (
       <>
         {musicMode && !compact && <MusicVisualizer track={room.currentTrack} isPlaying={room.isPlaying} />}
-        {ytPlayerEl}
-        <div style={{ width: '100%', maxWidth: compact ? '100%' : videoFocus ? 700 : 500 }}>
-          <div style={{ textAlign: 'center', marginBottom: compact ? 10 : 14 }}>
-            <div style={{ fontWeight: 600, fontSize: compact ? '0.9rem' : '1rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{room.currentTrack.title}</div>
-            <div style={{ color: 'var(--text-dim)', fontSize: compact ? '0.78rem' : '0.875rem', marginTop: 4 }}>{room.currentTrack.channelTitle}</div>
+        {/* Music mode compact: thumbnail + title inline above controls */}
+        {musicMode && compact && (
+          <div style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px 0' }}>
+            <img src={room.currentTrack.thumbnail} alt="" style={{ width: 48, height: 48, borderRadius: 8, objectFit: 'cover', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.6)' }} />
+            <div style={{ flex: 1, overflow: 'hidden' }}>
+              <div style={{ fontWeight: 600, fontSize: '0.85rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{room.currentTrack.title}</div>
+              <div style={{ color: 'var(--text-dim)', fontSize: '0.72rem', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{room.currentTrack.channelTitle}</div>
+            </div>
           </div>
+        )}
+        {ytPlayerEl}
+        <div style={{ width: '100%', maxWidth: compact ? '100%' : videoFocus ? '100%' : 500, padding: compact ? '6px 14px 10px' : undefined }}>
+          {!compact && (
+            <div style={{ textAlign: 'center', marginBottom: 14 }}>
+              <div style={{ fontWeight: 600, fontSize: '1rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{room.currentTrack.title}</div>
+              <div style={{ color: 'var(--text-dim)', fontSize: '0.875rem', marginTop: 4 }}>{room.currentTrack.channelTitle}</div>
+            </div>
+          )}
+          {compact && !musicMode && (
+            <div style={{ marginBottom: 4 }}>
+              <div style={{ fontWeight: 600, fontSize: '0.85rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'center' }}>{room.currentTrack.title}</div>
+              <div style={{ color: 'var(--text-dim)', fontSize: '0.72rem', marginTop: 2, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{room.currentTrack.channelTitle}</div>
+            </div>
+          )}
           <div style={{ marginBottom: compact ? 12 : 16 }}>
             <ProgressBar currentTime={currentTime} duration={duration} isHost={isHost} canControl={canControl} onSeek={handleSeek} />
           </div>
@@ -1427,7 +1445,7 @@ export default function RoomPage() {
           </div>
 
           {/* ── Compact Player ── */}
-          <div style={{ flexShrink: 0, borderBottom: '1px solid var(--border)', padding: '10px 14px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
+          <div style={{ flexShrink: 0, borderBottom: '1px solid var(--border)', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
             {PlayerContent({ compact: true })}
           </div>
 
