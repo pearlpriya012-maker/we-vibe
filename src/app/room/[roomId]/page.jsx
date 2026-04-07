@@ -94,12 +94,12 @@ function PlaylistPanel({ onAddToQueue, canAdd, ytAccessToken, onStartPlaylist, o
   const [view, setView] = useState('playlists') // 'playlists' | 'tracks'
 
   useEffect(() => {
-    if (!ytToken) { setPlaylists([]); return }
+    if (!ytAccessToken) { setPlaylists([]); return }
     async function loadPlaylists() {
       setLoading(true)
       try {
         const res = await fetch('/api/youtube/playlists', {
-          headers: { Authorization: `Bearer ${ytToken}` }
+          headers: { Authorization: `Bearer ${ytAccessToken}` }
         })
         const data = await res.json()
         setPlaylists(data.playlists || [])
@@ -110,7 +110,7 @@ function PlaylistPanel({ onAddToQueue, canAdd, ytAccessToken, onStartPlaylist, o
       }
     }
     loadPlaylists()
-  }, [ytToken])
+  }, [ytAccessToken])
 
   async function loadPlaylistTracks(playlistId, title, thumbnail) {
     setSelectedPlaylist(title)
