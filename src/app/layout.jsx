@@ -7,7 +7,7 @@ export const metadata = {
   title: 'WE🕊️ — Collaborative Music Rooms',
   description: 'Watch. Listen. Together — in perfect sync.',
   verification: {
-    google: 'googlee2d3f53fb9609dfa',
+    google: '4zU7j5shCTlBlrC-Vi_8WB9feBvgAwiy3QXbeIUK34o',
   },
   icons: {
     icon: '/favicon.svg',
