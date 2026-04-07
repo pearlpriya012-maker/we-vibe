@@ -1330,7 +1330,7 @@ export default function RoomPage() {
 
           {/* ── Compact Player ── */}
           <div style={{ flexShrink: 0, borderBottom: '1px solid var(--border)', padding: '10px 14px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
-            <PlayerContent compact={true} />
+            {PlayerContent({ compact: true })}
           </div>
 
           {/* ── Tab Bar ── */}
