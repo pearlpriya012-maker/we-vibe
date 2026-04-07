@@ -1242,17 +1242,27 @@ export default function RoomPage() {
             <ProgressBar currentTime={currentTime} duration={duration} isHost={isHost} canControl={canControl} onSeek={handleSeek} />
           </div>
           {canControl ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: compact ? 12 : 16, justifyContent: 'center' }}>
-              <button onClick={handlePlayPause} style={{ width: compact ? 46 : 52, height: compact ? 46 : 52, borderRadius: '50%', background: 'var(--green)', border: 'none', cursor: 'pointer', fontSize: compact ? '1rem' : '1.2rem', color: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 20px rgba(0,255,136,0.4)', transition: 'transform 0.15s' }}>{room.isPlaying ? '⏸' : '▶'}</button>
-              <button onClick={() => skipToNext(roomId)} style={{ width: compact ? 36 : 40, height: compact ? 36 : 40, borderRadius: '50%', background: 'var(--glass)', border: '1px solid var(--border)', cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}>⏭</button>
-              {volumeWidget}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+              {/* Mobile: show TAP TO HEAR for everyone until audio is unlocked — tapping ⏸ would wrongly pause for all */}
+              {isMobile && !mobileTapped && room.isPlaying ? (
+                <button
+                  onClick={() => { setMobileTapped(true); try { ytPlayerRef.current?.playVideo?.() } catch {} }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(0,255,136,0.15)', border: '1px solid rgba(0,255,136,0.5)', borderRadius: 24, padding: '10px 22px', cursor: 'pointer', fontFamily: 'Oswald', fontSize: '0.85rem', letterSpacing: '0.1em', color: 'var(--green)', boxShadow: '0 0 16px rgba(0,255,136,0.25)' }}
+                >🔊 TAP TO HEAR</button>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: compact ? 12 : 16, justifyContent: 'center' }}>
+                  <button onClick={handlePlayPause} style={{ width: compact ? 46 : 52, height: compact ? 46 : 52, borderRadius: '50%', background: 'var(--green)', border: 'none', cursor: 'pointer', fontSize: compact ? '1rem' : '1.2rem', color: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 20px rgba(0,255,136,0.4)', transition: 'transform 0.15s' }}>{room.isPlaying ? '⏸' : '▶'}</button>
+                  <button onClick={() => skipToNext(roomId)} style={{ width: compact ? 36 : 40, height: compact ? 36 : 40, borderRadius: '50%', background: 'var(--glass)', border: '1px solid var(--border)', cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}>⏭</button>
+                  {volumeWidget}
+                </div>
+              )}
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
               {isMobile && !mobileTapped && room.isPlaying && (
                 <button
                   onClick={() => { setMobileTapped(true); try { ytPlayerRef.current?.playVideo?.() } catch {} }}
-                  style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(0,255,136,0.15)', border: '1px solid rgba(0,255,136,0.5)', borderRadius: 24, padding: '10px 22px', cursor: 'pointer', fontFamily: 'Oswald', fontSize: '0.85rem', letterSpacing: '0.1em', color: 'var(--green)', boxShadow: '0 0 16px rgba(0,255,136,0.25)', animation: 'pulse 1.5s ease-in-out infinite' }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(0,255,136,0.15)', border: '1px solid rgba(0,255,136,0.5)', borderRadius: 24, padding: '10px 22px', cursor: 'pointer', fontFamily: 'Oswald', fontSize: '0.85rem', letterSpacing: '0.1em', color: 'var(--green)', boxShadow: '0 0 16px rgba(0,255,136,0.25)' }}
                 >🔊 TAP TO HEAR</button>
               )}
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
