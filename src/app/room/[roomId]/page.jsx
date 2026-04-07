@@ -1108,13 +1108,17 @@ export default function RoomPage() {
     if (!YT) return
     if (e.data === YT.PLAYING) await updatePlayback(roomId, { isPlaying: true, currentTime: e.target.getCurrentTime() })
     else if (e.data === YT.PAUSED) await updatePlayback(roomId, { isPlaying: false, currentTime: e.target.getCurrentTime() })
-    else if (e.data === YT.ENDED) await skipToNext(roomId)
+    // Only host skips on ENDED — prevents all participants calling skipToNext simultaneously
+    else if (e.data === YT.ENDED && isHost) await skipToNext(roomId)
   }
 
   async function handlePlayerError(e) {
-    // error codes: 2=invalid id, 5=HTML5/mobile error, 100=not found, 101/150=embedding not allowed
-    // Any user can trigger the skip so mobile users don't get stuck on unplayable tracks
-    if (canControl) await skipToNext(roomId)
+    // Only host handles errors to avoid all participants race-skipping
+    if (!isHost) return
+    // Ignore code 5 (HTML5/network hiccup) — fires on valid songs on mobile due to connectivity
+    // Skip only on: 2=bad id, 100=not found, 101/150=embedding blocked
+    if (e.data === 5) return
+    await skipToNext(roomId)
   }
 
   async function handlePlayPause() {
