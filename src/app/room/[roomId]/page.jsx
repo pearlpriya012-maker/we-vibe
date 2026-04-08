@@ -869,6 +869,7 @@ export default function RoomPage() {
   const prevTrackRef = useRef(null)
   const mobileSkipTimerRef = useRef(null)  // Detects "can't play on mobile browser" stuck state
   const pauseDebounceRef = useRef(null)     // Debounces PAUSED writes to avoid backgrounding false-positives
+  const roomRef = useRef(null)              // Always-fresh copy of room — avoids stale closures in event handlers
   const [ytToken, setYtToken] = useState(user?.youtubeAccessToken || null)
 
   const isHost = room?.hostId === user?.uid
@@ -881,7 +882,7 @@ export default function RoomPage() {
 
   useEffect(() => {
     if (!user) { router.replace('/auth/login'); return }
-    return subscribeToRoom(roomId, data => { setRoom(data); setLoading(false) })
+    return subscribeToRoom(roomId, data => { setRoom(data); roomRef.current = data; setLoading(false) })
   }, [roomId, user])
 
   // ─── Live YouTube token from Firestore (refreshes when user connects in Settings) ───
@@ -976,14 +977,14 @@ export default function RoomPage() {
   useEffect(() => {
     function handleVisibilityChange() {
       if (document.hidden) return
-      // User came back — if Firestore says playing, seek to current position and resume
+      // Use roomRef.current — NOT room from closure — to get the live Firestore timestamp
       try {
         const p = ytPlayerRef.current
-        if (!p || !room?.isPlaying) return
+        const liveRoom = roomRef.current
+        if (!p || !liveRoom?.isPlaying) return
         const state = p.getPlayerState?.()
         if (state !== 1) {
-          // Seek to the Firestore timestamp so we're in sync, not behind
-          if (room.currentTime) p.seekTo?.(room.currentTime, true)
+          if (liveRoom.currentTime) p.seekTo?.(liveRoom.currentTime, true)
           p.unMute?.()
           p.setVolume?.(volume)
           p.playVideo?.()
