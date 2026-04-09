@@ -48,9 +48,9 @@ export async function GET(request) {
       durationMap[v.id] = parseDuration(v.contentDetails.duration)
     })
 
-    // Filter out auto-generated "- Topic" channel videos — these are always blocked on mobile browsers
+    // Note: "- Topic" auto-generated channels are kept — they're the cleanest pure audio versions.
+    // videoEmbeddable=true&videoSyndicated=true already filters unplayable ones at the API level.
     const results = searchData.items
-      .filter(item => !item.snippet.channelTitle?.endsWith('- Topic'))
       .map((item) => ({
       videoId: item.id.videoId,
       title: item.snippet.title,
