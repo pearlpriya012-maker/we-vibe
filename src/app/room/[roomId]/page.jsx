@@ -904,8 +904,9 @@ export default function RoomPage() {
   const keepAliveCtxRef = useRef(null)      // Web Audio context — keeps tab classified as active audio in background
   const keepAliveAudioRef = useRef(null)    // <audio> element driven by the keepalive stream
   // Watch URL room sync
-  const watchIframeRef = useRef(null)       // ref to watch URL <iframe>
-  const watchTimeRef = useRef(0)            // locally tracked playback time (seconds)
+  const watchIframeRef = useRef(null)       // ref to watch URL <iframe> (non-YT only)
+  const watchYtPlayerRef = useRef(null)     // real YT.Player for watch room YouTube videos
+  const watchTimeRef = useRef(0)            // latest video time (seconds) — set from real player
   const watchTimerRef = useRef(null)        // interval that increments watchTimeRef when playing
   const prevWatchUpdatedAt = useRef(null)   // tracks last Firestore update to avoid duplicate seeks
   const [watchTime, setWatchTime] = useState(0) // drives the seek bar UI
@@ -1055,11 +1056,20 @@ export default function RoomPage() {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
   }, [volume])
 
-  // ─── Watch URL room: postMessage helper + Firestore sync ───
-  function ytCmd(func, args = []) {
-    watchIframeRef.current?.contentWindow?.postMessage(
-      JSON.stringify({ event: 'command', func, args }), '*'
-    )
+  // ─── Watch URL room: real player helpers ───
+  function watchPlay()         { try { watchYtPlayerRef.current?.playVideo?.()         } catch {} }
+  function watchPause()        { try { watchYtPlayerRef.current?.pauseVideo?.()        } catch {} }
+  function watchSeek(t)        { try { watchYtPlayerRef.current?.seekTo?.(t, true)     } catch {} }
+  function watchGetTime()      { try { return watchYtPlayerRef.current?.getCurrentTime?.() ?? watchTimeRef.current } catch { return watchTimeRef.current } }
+
+  // Called when the watch YouTube player is ready (onReady)
+  function handleWatchPlayerReady(e) {
+    watchYtPlayerRef.current = e.target
+    const r = roomRef.current
+    const t = r?.watchCurrentTime || 0
+    if (t > 1) e.target.seekTo(t, true)
+    if (r?.watchIsPlaying) e.target.playVideo()
+    else e.target.pauseVideo()
   }
 
   // Sync all participants to host's play/pause/seek via Firestore
@@ -1070,49 +1080,42 @@ export default function RoomPage() {
 
     if (room.watchIsPlaying) {
       if (isNewUpdate) {
-        // Account for time elapsed since host wrote the update
         const elapsed = (Date.now() - room.watchUpdatedAt) / 1000
         const seekTo = Math.max(0, (room.watchCurrentTime || 0) + elapsed)
-        ytCmd('seekTo', [seekTo, true])
-        watchTimeRef.current = seekTo
-        setWatchTime(Math.floor(seekTo))
+        watchSeek(seekTo)
       }
-      ytCmd('playVideo')
-      clearInterval(watchTimerRef.current)
-      watchTimerRef.current = setInterval(() => {
-        watchTimeRef.current += 0.25
-        setWatchTime(Math.floor(watchTimeRef.current))
-      }, 250)
+      watchPlay()
     } else {
-      ytCmd('pauseVideo')
-      clearInterval(watchTimerRef.current)
-      if (isNewUpdate) {
-        const t = room.watchCurrentTime || 0
-        ytCmd('seekTo', [t, true])
-        watchTimeRef.current = t
-        setWatchTime(Math.floor(t))
-      }
+      watchPause()
+      if (isNewUpdate) watchSeek(room.watchCurrentTime || 0)
     }
-    return () => clearInterval(watchTimerRef.current)
   }, [room?.watchIsPlaying, room?.watchUpdatedAt, room?.watchUrl])
 
-  // ─── Receive real currentTime from YouTube iframe via infoDelivery ───
+  // ─── Poll real player time every 500ms → drives UI + watchTimeRef ───
   useEffect(() => {
     if (!room?.watchUrl) return
-    function onMsg(e) {
-      if (!e.data) return
-      let d
-      try { d = JSON.parse(e.data) } catch { return }
-      if (d.event === 'infoDelivery' && d.info?.currentTime != null) {
-        watchTimeRef.current = d.info.currentTime
-        setWatchTime(Math.floor(d.info.currentTime))
-      }
-    }
-    window.addEventListener('message', onMsg)
-    return () => window.removeEventListener('message', onMsg)
+    const iv = setInterval(() => {
+      if (!watchYtPlayerRef.current?.getCurrentTime) return
+      const t = watchYtPlayerRef.current.getCurrentTime()
+      watchTimeRef.current = t
+      setWatchTime(Math.floor(t))
+    }, 500)
+    return () => clearInterval(iv)
   }, [room?.watchUrl])
 
-  // ─── Broadcast this user's watch time every 5s ───
+  // ─── Host: save current time to Firestore every 5s so guests can resume on reload ───
+  useEffect(() => {
+    if (!room?.watchUrl || !isHost) return
+    const iv = setInterval(() => {
+      if (watchYtPlayerRef.current?.getCurrentTime) {
+        const t = watchYtPlayerRef.current.getCurrentTime()
+        updateWatchPlayback(roomId, { watchCurrentTime: t }).catch(() => {})
+      }
+    }, 5000)
+    return () => clearInterval(iv)
+  }, [room?.watchUrl, isHost, roomId])
+
+  // ─── Broadcast this user's watch time for People panel ───
   useEffect(() => {
     if (!room?.watchUrl || !user?.uid) return
     const iv = setInterval(() => {
@@ -1819,24 +1822,12 @@ export default function RoomPage() {
 
         {/* Video */}
         <div style={{ flexShrink: 0, width: '100%', paddingTop: '56.25%', position: 'relative', background: '#000' }}>
-          <iframe
-            ref={watchIframeRef}
-            src={room.watchUrl}
-            allow="autoplay; fullscreen; picture-in-picture"
-            allowFullScreen
-            onLoad={() => {
-              const win = watchIframeRef.current?.contentWindow
-              if (!win) return
-              win.postMessage(JSON.stringify({ event: 'listening', id: 1 }), '*')
-              setTimeout(() => {
-                const r = roomRef.current
-                const t = r?.watchCurrentTime || 0
-                if (t > 1) win.postMessage(JSON.stringify({ event: 'command', func: 'seekTo', args: [t, true] }), '*')
-                win.postMessage(JSON.stringify({ event: 'command', func: r?.watchIsPlaying ? 'playVideo' : 'pauseVideo', args: [] }), '*')
-              }, 1500)
-            }}
-            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
-            title="Watch together"
+          <YouTube
+            key={room.watchUrl}
+            videoId={room.watchUrl.match(/embed\/([A-Za-z0-9_-]{11})/)?.[1]}
+            opts={{ width: '100%', height: '100%', playerVars: { autoplay: 1, controls: 1, rel: 0, playsinline: 1 } }}
+            onReady={handleWatchPlayerReady}
+            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
           />
         </div>
 
@@ -1848,16 +1839,17 @@ export default function RoomPage() {
                 <button
                   onClick={() => {
                     const nowPlaying = !room.watchIsPlaying
-                    ytCmd(nowPlaying ? 'playVideo' : 'pauseVideo')
-                    updateWatchPlayback(roomId, { watchIsPlaying: nowPlaying, watchCurrentTime: watchTimeRef.current, watchUpdatedAt: Date.now() })
+                    const t = watchGetTime()
+                    if (nowPlaying) watchPlay(); else watchPause()
+                    updateWatchPlayback(roomId, { watchIsPlaying: nowPlaying, watchCurrentTime: t, watchUpdatedAt: Date.now() })
                   }}
                   style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--cyan)', border: 'none', cursor: 'pointer', fontSize: '1rem', color: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 0 14px rgba(0,200,255,0.4)' }}
                 >{room.watchIsPlaying ? '⏸' : '▶'}</button>
                 <span style={{ fontFamily: 'Oswald', fontSize: '0.72rem', color: 'var(--cyan)', flexShrink: 0, minWidth: 36 }}>{fmtTime(watchTime)}</span>
                 <input type="range" min="0" max="7200" value={watchTime}
-                  onChange={e => { watchTimeRef.current = +e.target.value; setWatchTime(+e.target.value) }}
-                  onMouseUp={e => { ytCmd('seekTo', [+e.target.value, true]); updateWatchPlayback(roomId, { watchCurrentTime: +e.target.value, watchUpdatedAt: Date.now() }) }}
-                  onTouchEnd={e => { ytCmd('seekTo', [+e.target.value, true]); updateWatchPlayback(roomId, { watchCurrentTime: +e.target.value, watchUpdatedAt: Date.now() }) }}
+                  onChange={e => { setWatchTime(+e.target.value) }}
+                  onMouseUp={e => { watchSeek(+e.target.value); updateWatchPlayback(roomId, { watchCurrentTime: +e.target.value, watchUpdatedAt: Date.now() }) }}
+                  onTouchEnd={e => { watchSeek(+e.target.value); updateWatchPlayback(roomId, { watchCurrentTime: +e.target.value, watchUpdatedAt: Date.now() }) }}
                   style={{ flex: 1, accentColor: 'var(--cyan)', cursor: 'pointer' }}
                 />
               </>
@@ -2090,24 +2082,12 @@ export default function RoomPage() {
           {/* Video + Controls */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#000' }}>
             <div style={{ flex: 1, overflow: 'hidden' }}>
-              <iframe
-                ref={watchIframeRef}
-                src={room.watchUrl}
-                allow="autoplay; fullscreen; picture-in-picture"
-                allowFullScreen
-                onLoad={() => {
-                  const win = watchIframeRef.current?.contentWindow
-                  if (!win) return
-                  win.postMessage(JSON.stringify({ event: 'listening', id: 1 }), '*')
-                  setTimeout(() => {
-                    const r = roomRef.current
-                    const t = r?.watchCurrentTime || 0
-                    if (t > 1) win.postMessage(JSON.stringify({ event: 'command', func: 'seekTo', args: [t, true] }), '*')
-                    win.postMessage(JSON.stringify({ event: 'command', func: r?.watchIsPlaying ? 'playVideo' : 'pauseVideo', args: [] }), '*')
-                  }, 1500)
-                }}
-                style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
-                title="Watch together"
+              <YouTube
+                key={room.watchUrl}
+                videoId={room.watchUrl.match(/embed\/([A-Za-z0-9_-]{11})/)?.[1]}
+                opts={{ width: '100%', height: '100%', playerVars: { autoplay: 1, controls: 1, rel: 0, playsinline: 1 } }}
+                onReady={handleWatchPlayerReady}
+                style={{ width: '100%', height: '100%' }}
               />
             </div>
             {/* Sync controls */}
@@ -2118,8 +2098,9 @@ export default function RoomPage() {
                     <button
                       onClick={() => {
                         const nowPlaying = !room.watchIsPlaying
-                        ytCmd(nowPlaying ? 'playVideo' : 'pauseVideo')
-                        updateWatchPlayback(roomId, { watchIsPlaying: nowPlaying, watchCurrentTime: watchTimeRef.current, watchUpdatedAt: Date.now() })
+                        const t = watchGetTime()
+                        if (nowPlaying) watchPlay(); else watchPause()
+                        updateWatchPlayback(roomId, { watchIsPlaying: nowPlaying, watchCurrentTime: t, watchUpdatedAt: Date.now() })
                       }}
                       style={{ width: 44, height: 44, borderRadius: '50%', background: 'var(--cyan)', border: 'none', cursor: 'pointer', fontSize: '1.2rem', color: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 0 16px rgba(0,200,255,0.4)', transition: 'transform 0.15s' }}
                       onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.1)'}
@@ -2127,8 +2108,8 @@ export default function RoomPage() {
                     >{room.watchIsPlaying ? '⏸' : '▶'}</button>
                     <span style={{ fontFamily: 'Oswald', fontSize: '0.8rem', color: 'var(--cyan)', flexShrink: 0, minWidth: 42 }}>{fmtTime(watchTime)}</span>
                     <input type="range" min="0" max="7200" value={watchTime}
-                      onChange={e => { watchTimeRef.current = +e.target.value; setWatchTime(+e.target.value) }}
-                      onMouseUp={e => { ytCmd('seekTo', [+e.target.value, true]); updateWatchPlayback(roomId, { watchCurrentTime: +e.target.value, watchUpdatedAt: Date.now() }) }}
+                      onChange={e => { setWatchTime(+e.target.value) }}
+                      onMouseUp={e => { watchSeek(+e.target.value); updateWatchPlayback(roomId, { watchCurrentTime: +e.target.value, watchUpdatedAt: Date.now() }) }}
                       style={{ flex: 1, accentColor: 'var(--cyan)', cursor: 'pointer' }}
                     />
                     <span style={{ fontFamily: 'Oswald', fontSize: '0.65rem', color: 'var(--text-dim)', flexShrink: 0 }}>{isHost ? '⭐ HOST CONTROLS' : '🛡️ IN SYNC'}</span>
