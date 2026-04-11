@@ -10,7 +10,7 @@ import {
   updatePlayback, addToQueue, addManyToQueue, removeFromQueue, reorderQueue,
   setCurrentTrack, skipToNext, leaveRoom,
   sendMessage, addReaction, toggleParticipantQueueAccess, toggleParticipantFullControl,
-  kickParticipant, updateMusicMode, updateWatchPlayback,
+  kickParticipant, updateMusicMode, updateWatchPlayback, updateParticipantWatchTime,
 } from '@/lib/rooms'
 
 function Avatar({ user, size = 32 }) {
@@ -595,8 +595,9 @@ function ChatPanel({ roomId, messages, currentUser }) {
 }
 
 // ─── Participants Panel ───
-function ParticipantsPanel({ room, currentUser, isHost, roomId }) {
+function ParticipantsPanel({ room, currentUser, isHost, roomId, watchTimes }) {
   const [kickConfirm, setKickConfirm] = useState(null)
+  const fmtTime = s => { if (s == null) return null; const m = Math.floor(s / 60); const sec = Math.floor(s % 60); return `${m}:${sec.toString().padStart(2, '0')}` }
   async function handleKick(uid) {
     try { await kickParticipant(roomId, uid); toast.success('Removed'); setKickConfirm(null) }
     catch { toast.error('Could not kick') }
@@ -635,6 +636,11 @@ function ParticipantsPanel({ room, currentUser, isHost, roomId }) {
           <div style={{ flex: 1, overflow: 'hidden' }}>
             <div style={{ fontSize: '0.875rem', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.displayName}{p.uid === currentUser?.uid && <span style={{ color: 'var(--text-dim)', fontSize: '0.7rem', marginLeft: 6 }}>(you)</span>}</div>
             {p.uid === room.hostId && <div style={{ fontSize: '0.65rem', color: '#f39c12', fontFamily: 'Oswald' }}>⭐ HOST</div>}
+            {watchTimes && fmtTime(watchTimes[p.uid]) && (
+              <div style={{ fontSize: '0.65rem', color: 'var(--cyan)', fontFamily: 'Oswald', letterSpacing: '0.05em', marginTop: 1 }}>
+                🎬 {fmtTime(watchTimes[p.uid])}
+              </div>
+            )}
           </div>
           {isHost && p.uid !== currentUser?.uid && (
             kickConfirm === p.uid
@@ -1088,6 +1094,15 @@ export default function RoomPage() {
     }
     return () => clearInterval(watchTimerRef.current)
   }, [room?.watchIsPlaying, room?.watchUpdatedAt, room?.watchUrl])
+
+  // ─── Broadcast this user's watch time every 5s ───
+  useEffect(() => {
+    if (!room?.watchUrl || !user?.uid) return
+    const iv = setInterval(() => {
+      updateParticipantWatchTime(roomId, user.uid, watchTimeRef.current).catch(() => {})
+    }, 5000)
+    return () => clearInterval(iv)
+  }, [room?.watchUrl, user?.uid, roomId])
 
   // ─── MediaSession API: lock-screen / notification controls (iOS 14.5+, Android Chrome) ───
   useEffect(() => {
@@ -1819,7 +1834,7 @@ export default function RoomPage() {
         {/* Tab Content */}
         <div style={{ flex: 1, overflow: 'hidden', minHeight: 0 }}>
           <div style={{ display: mobileTab === 'people' ? 'flex' : 'none', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-            <ParticipantsPanel room={room} currentUser={user} isHost={isHost} roomId={roomId} />
+            <ParticipantsPanel room={room} currentUser={user} isHost={isHost} roomId={roomId} watchTimes={room.watchTimes} />
           </div>
           <div style={{ display: mobileTab !== 'people' ? 'flex' : 'none', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
             <ChatPanel roomId={roomId} messages={messages} currentUser={user} />
@@ -2057,7 +2072,7 @@ export default function RoomPage() {
             <div style={{ flex: 1, overflow: 'hidden' }}>
               {rightTab === 'chat'
                 ? <ChatPanel roomId={roomId} messages={messages} currentUser={user} />
-                : <ParticipantsPanel room={room} currentUser={user} isHost={isHost} roomId={roomId} />
+                : <ParticipantsPanel room={room} currentUser={user} isHost={isHost} roomId={roomId} watchTimes={room.watchTimes} />
               }
             </div>
           </div>

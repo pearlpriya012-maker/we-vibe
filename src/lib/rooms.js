@@ -80,6 +80,14 @@ export async function updateWatchPlayback(roomId, data) {
   await updateDoc(firestoreDoc(db, 'rooms', roomId), data)
 }
 
+// ─── Report this participant's current video time ───
+export async function updateParticipantWatchTime(roomId, uid, seconds) {
+  const { updateDoc, doc: firestoreDoc } = await import('firebase/firestore')
+  await updateDoc(firestoreDoc(db, 'rooms', roomId), {
+    [`watchTimes.${uid}`]: Math.floor(seconds)
+  })
+}
+
 // ─── Join a room by code ───
 export async function joinRoomByCode({ code, uid, displayName, photoURL }) {
   const q = query(collection(db, 'rooms'), where('roomCode', '==', code.toUpperCase()))
