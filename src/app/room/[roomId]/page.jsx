@@ -1822,13 +1822,23 @@ export default function RoomPage() {
 
         {/* Video */}
         <div style={{ flexShrink: 0, width: '100%', paddingTop: '56.25%', position: 'relative', background: '#000' }}>
-          <YouTube
-            key={room.watchUrl}
-            videoId={room.watchUrl.match(/embed\/([A-Za-z0-9_-]{11})/)?.[1]}
-            opts={{ width: '100%', height: '100%', playerVars: { autoplay: 1, controls: 1, rel: 0, playsinline: 1 } }}
-            onReady={handleWatchPlayerReady}
-            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
-          />
+          {isYt ? (
+            <YouTube
+              key={room.watchUrl}
+              videoId={room.watchUrl.match(/embed\/([A-Za-z0-9_-]{11})/)?.[1]}
+              opts={{ width: '100%', height: '100%', playerVars: { autoplay: 1, controls: 1, rel: 0, playsinline: 1 } }}
+              onReady={handleWatchPlayerReady}
+              style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
+            />
+          ) : (
+            <iframe
+              src={room.watchUrl}
+              allow="autoplay; fullscreen; picture-in-picture"
+              allowFullScreen
+              style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
+              title="Watch together"
+            />
+          )}
         </div>
 
         {/* Sync Controls */}
@@ -2082,13 +2092,23 @@ export default function RoomPage() {
           {/* Video + Controls */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#000' }}>
             <div style={{ flex: 1, overflow: 'hidden' }}>
-              <YouTube
-                key={room.watchUrl}
-                videoId={room.watchUrl.match(/embed\/([A-Za-z0-9_-]{11})/)?.[1]}
-                opts={{ width: '100%', height: '100%', playerVars: { autoplay: 1, controls: 1, rel: 0, playsinline: 1 } }}
-                onReady={handleWatchPlayerReady}
-                style={{ width: '100%', height: '100%' }}
-              />
+              {isYt ? (
+                <YouTube
+                  key={room.watchUrl}
+                  videoId={room.watchUrl.match(/embed\/([A-Za-z0-9_-]{11})/)?.[1]}
+                  opts={{ width: '100%', height: '100%', playerVars: { autoplay: 1, controls: 1, rel: 0, playsinline: 1 } }}
+                  onReady={handleWatchPlayerReady}
+                  style={{ width: '100%', height: '100%' }}
+                />
+              ) : (
+                <iframe
+                  src={room.watchUrl}
+                  allow="autoplay; fullscreen; picture-in-picture"
+                  allowFullScreen
+                  style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
+                  title="Watch together"
+                />
+              )}
             </div>
             {/* Sync controls */}
             {isYt && (
