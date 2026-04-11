@@ -1824,7 +1824,17 @@ export default function RoomPage() {
             src={room.watchUrl}
             allow="autoplay; fullscreen; picture-in-picture"
             allowFullScreen
-            onLoad={() => watchIframeRef.current?.contentWindow?.postMessage(JSON.stringify({ event: 'listening', id: 1 }), '*')}
+            onLoad={() => {
+              const win = watchIframeRef.current?.contentWindow
+              if (!win) return
+              win.postMessage(JSON.stringify({ event: 'listening', id: 1 }), '*')
+              setTimeout(() => {
+                const r = roomRef.current
+                const t = r?.watchCurrentTime || 0
+                if (t > 1) win.postMessage(JSON.stringify({ event: 'command', func: 'seekTo', args: [t, true] }), '*')
+                win.postMessage(JSON.stringify({ event: 'command', func: r?.watchIsPlaying ? 'playVideo' : 'pauseVideo', args: [] }), '*')
+              }, 1500)
+            }}
             style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
             title="Watch together"
           />
@@ -2085,7 +2095,17 @@ export default function RoomPage() {
                 src={room.watchUrl}
                 allow="autoplay; fullscreen; picture-in-picture"
                 allowFullScreen
-                onLoad={() => watchIframeRef.current?.contentWindow?.postMessage(JSON.stringify({ event: 'listening', id: 1 }), '*')}
+                onLoad={() => {
+                  const win = watchIframeRef.current?.contentWindow
+                  if (!win) return
+                  win.postMessage(JSON.stringify({ event: 'listening', id: 1 }), '*')
+                  setTimeout(() => {
+                    const r = roomRef.current
+                    const t = r?.watchCurrentTime || 0
+                    if (t > 1) win.postMessage(JSON.stringify({ event: 'command', func: 'seekTo', args: [t, true] }), '*')
+                    win.postMessage(JSON.stringify({ event: 'command', func: r?.watchIsPlaying ? 'playVideo' : 'pauseVideo', args: [] }), '*')
+                  }, 1500)
+                }}
                 style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
                 title="Watch together"
               />
