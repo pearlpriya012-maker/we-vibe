@@ -41,13 +41,14 @@ async function roomCodeExists(code) {
 }
 
 // ─── Create a new room ───
-export async function createRoom({ hostId, hostName, hostPhoto, mode }) {
+export async function createRoom({ hostId, hostName, hostPhoto, mode, watchUrl }) {
   const roomCode = await generateRoomCode()
   const roomRef = doc(collection(db, 'rooms'))
   const roomData = {
     id: roomRef.id,
     roomCode,
     hostId,
+    ...(watchUrl ? { watchUrl } : {}),
     participants: [
       {
         uid: hostId,

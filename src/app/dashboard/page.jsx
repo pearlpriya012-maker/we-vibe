@@ -27,6 +27,21 @@ export default function DashboardPage() {
   const [joinCode, setJoinCode] = useState('')
   const [creating, setCreating] = useState(false)
   const [joining, setJoining] = useState(false)
+  const [watchUrl, setWatchUrl] = useState('')
+  const [watchUrlError, setWatchUrlError] = useState('')
+
+  // Extract a clean embed URL from a YouTube or arbitrary URL
+  function toEmbedUrl(raw) {
+    const s = raw.trim()
+    // youtube.com/watch?v=ID  or  youtu.be/ID  or  youtube.com/shorts/ID
+    const ytMatch = s.match(
+      /(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/
+    )
+    if (ytMatch) return `https://www.youtube.com/embed/${ytMatch[1]}?autoplay=1&rel=0`
+    // Already a direct https URL — pass through (e.g. Twitch, Vimeo embed links)
+    if (/^https?:\/\//i.test(s)) return s
+    return null
+  }
 
   useEffect(() => {
     if (!user) router.replace('/auth/login')
@@ -72,6 +87,32 @@ export default function DashboardPage() {
     }
   }
 
+  async function handleWatchUrl(e) {
+    e.preventDefault()
+    setWatchUrlError('')
+    const embedUrl = toEmbedUrl(watchUrl)
+    if (!embedUrl) {
+      setWatchUrlError('Paste a YouTube link or any valid https:// URL')
+      return
+    }
+    setCreating(true)
+    try {
+      const { id } = await createRoom({
+        hostId: user.uid,
+        hostName: user.displayName,
+        hostPhoto: user.photoURL,
+        mode: 'music',
+        watchUrl: embedUrl,
+      })
+      toast.success('Watch room created! 📺')
+      router.push(`/room/${id}`)
+    } catch (err) {
+      toast.error(err.message || 'Could not create room')
+    } finally {
+      setCreating(false)
+    }
+  }
+
   return (
     <div style={{ minHeight: '100vh', position: 'relative' }}>
       <div className="grid-bg" />
@@ -107,11 +148,36 @@ export default function DashboardPage() {
           <p style={{ color: 'var(--text-dim)', marginTop: 12, fontSize: '1rem', fontWeight: 300 }}>Create a new room or join one with a code</p>
         </div>
 
-        <div className="glass-card" style={{ width: '100%', maxWidth: 520, overflow: 'hidden' }}>
-          {/* Tabs */}
-          <div className="tab-bar">
-            <button className={`tab-btn ${tab === 'create' ? 'active' : ''}`} onClick={() => setTab('create')}>🎵 Create Room</button>
-            <button className={`tab-btn ${tab === 'join' ? 'active' : ''}`} onClick={() => setTab('join')}>🔗 Join Room</button>
+        <div className="glass-card" style={{ width: '100%', maxWidth: 520 }}>
+          {/* Tabs — CSS grid so all 3 always fit equally, no scrolling needed */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', borderBottom: '1px solid var(--border)' }}>
+            {[
+              { key: 'create', label: '🎵 Create' },
+              { key: 'watch',  label: '📺 Watch URL' },
+              { key: 'join',   label: '🔗 Join' },
+            ].map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setTab(key)}
+                style={{
+                  padding: '13px 8px',
+                  background: 'transparent',
+                  border: 'none',
+                  borderBottom: tab === key ? '2px solid var(--green)' : '2px solid transparent',
+                  marginBottom: -1,
+                  color: tab === key ? 'var(--green)' : 'var(--text-dim)',
+                  fontFamily: 'Oswald, sans-serif',
+                  fontSize: '0.72rem',
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  transition: 'color 0.2s',
+                }}
+              >{label}</button>
+            ))}
           </div>
 
           <div style={{ padding: '36px 32px' }}>
@@ -125,6 +191,28 @@ export default function DashboardPage() {
                   {creating ? <><span className="spinner" /> Creating Room…</> : 'Create Room 🚀'}
                 </button>
               </div>
+            ) : tab === 'watch' ? (
+              <form onSubmit={handleWatchUrl} style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                <div style={{ background: 'rgba(52,152,219,0.06)', border: '1px solid rgba(52,152,219,0.2)', borderRadius: 10, padding: '16px 20px', fontSize: '0.875rem', color: 'var(--text-dim)' }}>
+                  <span style={{ color: 'var(--cyan)', fontWeight: 600 }}>Watch together.</span> Paste a YouTube link or any embeddable URL — everyone in the room sees it in sync.
+                </div>
+                <div>
+                  <div style={{ fontFamily: 'Oswald', fontSize: '0.8rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-dim)', marginBottom: 10 }}>Video URL</div>
+                  <input
+                    type="text"
+                    placeholder="https://youtube.com/watch?v=... or any URL"
+                    className="input-vibe"
+                    value={watchUrl}
+                    onChange={e => { setWatchUrl(e.target.value); setWatchUrlError('') }}
+                    style={{ fontSize: '0.875rem' }}
+                  />
+                  {watchUrlError && <p style={{ color: 'var(--pink)', fontSize: '0.78rem', marginTop: 8 }}>{watchUrlError}</p>}
+                  <p style={{ color: 'var(--text-dim)', fontSize: '0.78rem', marginTop: 8 }}>Supports: YouTube, youtu.be, Shorts, or any direct https:// embed URL</p>
+                </div>
+                <button type="submit" disabled={creating || !watchUrl.trim()} className="btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '15px', background: 'var(--cyan)', boxShadow: '0 0 20px rgba(0,200,255,0.3)' }}>
+                  {creating ? <><span className="spinner" /> Creating…</> : 'Create Watch Room 📺'}
+                </button>
+              </form>
             ) : (
               <form onSubmit={handleJoin} style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
                 <div>

@@ -65,6 +65,7 @@ export async function GET(request) {
         thumbnail: snippet.thumbnails?.medium?.url || snippet.thumbnails?.default?.url || '',
         duration,
         durationFormatted: formatDuration(duration),
+        playlistPosition: item.snippet.position,
       }
     })
 

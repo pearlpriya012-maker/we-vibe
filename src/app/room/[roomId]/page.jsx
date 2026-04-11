@@ -100,17 +100,18 @@ function ProgressBar({ currentTime, duration, isHost, canControl, onSeek }) {
 }
 
 // ─── YouTube Playlist Panel ───
-function PlaylistPanel({ onAddToQueue, canAdd, ytAccessToken, onStartPlaylist, onShufflePlaylist, onTokenExpired }) {
-  const [playlists, setPlaylists] = useState([])
+function PlaylistPanel({ onAddToQueue, canAdd, ytAccessToken, onStartPlaylist, onShufflePlaylist, onTokenExpired, cachedPlaylists, onPlaylistsLoaded }) {
+  const [playlists, setPlaylists] = useState(cachedPlaylists || [])
   const [tracks, setTracks] = useState([])
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(!cachedPlaylists && !!ytAccessToken)
   const [selectedPlaylist, setSelectedPlaylist] = useState(null)
   const [selectedPlaylistMeta, setSelectedPlaylistMeta] = useState(null)
   const [view, setView] = useState('playlists') // 'playlists' | 'tracks'
   const [tokenError, setTokenError] = useState(false)
 
   useEffect(() => {
-    if (!ytAccessToken) { setPlaylists([]); return }
+    if (cachedPlaylists) return // already have data — don't refetch
+    if (!ytAccessToken) { setPlaylists([]); setLoading(false); return }
     setTokenError(false)
     fetchPlaylists(ytAccessToken)
   }, [ytAccessToken])
@@ -126,6 +127,7 @@ function PlaylistPanel({ onAddToQueue, canAdd, ytAccessToken, onStartPlaylist, o
           const res2 = await fetch('/api/youtube/playlists', { headers: { Authorization: `Bearer ${newToken}` } })
           const data2 = await res2.json()
           setPlaylists(data2.playlists || [])
+          onPlaylistsLoaded?.(data2.playlists || [])
         } else {
           setTokenError(true)
         }
@@ -133,6 +135,7 @@ function PlaylistPanel({ onAddToQueue, canAdd, ytAccessToken, onStartPlaylist, o
       }
       const data = await res.json()
       setPlaylists(data.playlists || [])
+      onPlaylistsLoaded?.(data.playlists || [])
     } catch {
       setPlaylists([])
     } finally {
@@ -161,7 +164,27 @@ function PlaylistPanel({ onAddToQueue, canAdd, ytAccessToken, onStartPlaylist, o
     }
   }
 
-  if (loading) return <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-dim)' }}><span className="spinner" /></div>
+  if (loading) return (
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+      <div style={{ padding: '12px 14px 8px', flexShrink: 0 }}>
+        <span style={{ fontFamily: 'Oswald', fontSize: '0.65rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-dim)' }}>
+          {view === 'tracks' ? 'Loading tracks…' : 'Loading playlists…'}
+        </span>
+      </div>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '0 8px 8px' }}>
+        <style>{`@keyframes plSkel{0%,100%{opacity:0.35}50%{opacity:0.75}}`}</style>
+        {[1,2,3,4,5,6].map(i => (
+          <div key={i} style={{ display: 'flex', gap: 10, padding: '8px 10px', borderRadius: 8, alignItems: 'center', marginBottom: 2 }}>
+            <div style={{ width: 52, height: 38, borderRadius: 4, background: 'rgba(255,255,255,0.12)', flexShrink: 0, animation: `plSkel 1.4s ease-in-out ${i * 0.12}s infinite` }} />
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 7 }}>
+              <div style={{ height: 11, borderRadius: 4, background: 'rgba(255,255,255,0.12)', width: `${50 + (i * 17) % 38}%`, animation: `plSkel 1.4s ease-in-out ${i * 0.12}s infinite` }} />
+              <div style={{ height: 9, borderRadius: 4, background: 'rgba(255,255,255,0.08)', width: '38%', animation: `plSkel 1.4s ease-in-out ${i * 0.18}s infinite` }} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
 
   if (!ytAccessToken || tokenError) return (
     <div style={{ padding: 24, textAlign: 'center' }}>
@@ -209,7 +232,7 @@ function PlaylistPanel({ onAddToQueue, canAdd, ytAccessToken, onStartPlaylist, o
               <div style={{ fontSize: '0.68rem', color: 'var(--text-dim)' }}>{track.channelTitle} · {track.durationFormatted}</div>
             </div>
             <button
-              onClick={() => { if (!canAdd) { toast('Ask host to allow adding songs'); return } onAddToQueue(track); toast.success('Added!') }}
+              onClick={() => { if (!canAdd) { toast('Ask host to allow adding songs'); return } onAddToQueue({ ...track, playlistId: selectedPlaylistMeta?.id, playlistName: selectedPlaylistMeta?.title, playlistThumb: selectedPlaylistMeta?.thumbnail }); toast.success('Added!') }}
               style={{ background: canAdd ? 'rgba(0,255,136,0.1)' : 'rgba(255,255,255,0.04)', border: `1px solid ${canAdd ? 'rgba(0,255,136,0.3)' : 'rgba(255,255,255,0.08)'}`, color: canAdd ? 'var(--green)' : 'rgba(255,255,255,0.25)', borderRadius: 6, padding: '4px 10px', fontSize: '0.7rem', cursor: canAdd ? 'pointer' : 'default', fontFamily: 'Oswald', flexShrink: 0 }}
             >+ ADD</button>
           </div>
@@ -256,6 +279,7 @@ function SearchAndQueue({ room, isHost, canAdd, onAddToQueue, onPlayNow, onRemov
   useEffect(() => { if (initialTab && hideTabs) setTab(initialTab) }, [initialTab])
   const debRef = useRef(null)
   const playlistCacheRef = useRef(null) // cached [{videoId, title, channelTitle, thumbnail, durationFormatted, playlistName}]
+  const fetchedPlaylistsRef = useRef(null) // cache fetched playlists list so tab switches are instant
 
   function handleQueueDrop(toIdx) {
     if (dragIdx === null || dragIdx === toIdx || !roomId) { setDragIdx(null); setDropIdx(null); return }
@@ -345,7 +369,7 @@ function SearchAndQueue({ room, isHost, canAdd, onAddToQueue, onPlayNow, onRemov
       )}
 
       {tab === 'playlists' ? (
-        <PlaylistPanel onAddToQueue={onAddToQueue} canAdd={canAdd} ytAccessToken={ytAccessToken} onStartPlaylist={onStartPlaylist} onShufflePlaylist={onShufflePlaylist} onTokenExpired={onTokenExpired} />
+        <PlaylistPanel onAddToQueue={onAddToQueue} canAdd={canAdd} ytAccessToken={ytAccessToken} onStartPlaylist={onStartPlaylist} onShufflePlaylist={onShufflePlaylist} onTokenExpired={onTokenExpired} cachedPlaylists={fetchedPlaylistsRef.current} onPlaylistsLoaded={data => { fetchedPlaylistsRef.current = data }} />
       ) : tab === 'aibond' ? (
         <AIBondPanel room={room} canAdd={canAdd} onAddToQueue={onAddToQueue} ytAccessToken={ytAccessToken} />
       ) : tab === 'queue' ? (
@@ -870,6 +894,9 @@ export default function RoomPage() {
   const mobileSkipTimerRef = useRef(null)  // Detects "can't play on mobile browser" stuck state
   const pauseDebounceRef = useRef(null)     // Debounces PAUSED writes to avoid backgrounding false-positives
   const roomRef = useRef(null)              // Always-fresh copy of room — avoids stale closures in event handlers
+  const playlistTriedRef = useRef(null)     // videoId of last track we tried loadPlaylist for (prevents infinite loop)
+  const keepAliveCtxRef = useRef(null)      // Web Audio context — keeps tab classified as active audio in background
+  const keepAliveAudioRef = useRef(null)    // <audio> element driven by the keepalive stream
   const [ytToken, setYtToken] = useState(user?.youtubeAccessToken || null)
 
   const isHost = room?.hostId === user?.uid
@@ -973,15 +1000,35 @@ export default function RoomPage() {
     return () => { clearInterval(tickRef.current); clearTimeout(mobileSkipTimerRef.current); clearTimeout(pauseDebounceRef.current) }
   }, [])
 
-  // ─── Visibility change: resume local player when user returns to app ───
+  // ─── Visibility change: keep playing in background, resume on return ───
   useEffect(() => {
     function handleVisibilityChange() {
-      if (document.hidden) return
-      // Use roomRef.current — NOT room from closure — to get the live Firestore timestamp
+      const p = ytPlayerRef.current
+      const liveRoom = roomRef.current
+      if (!p || !liveRoom?.isPlaying) return
+      if (document.hidden) {
+        // Ensure the silent keepalive audio is playing so Chrome keeps this
+        // tab in the "active audio" category — that's what unblocks playVideo()
+        // from background JS.
+        keepAliveAudioRef.current?.play().catch(() => {})
+        // YouTube's iframe fires pauseVideo() ~100-300ms after visibilitychange.
+        // Poll twice to guarantee we override it regardless of timing.
+        setTimeout(() => {
+          try {
+            if (roomRef.current?.isPlaying && ytPlayerRef.current?.getPlayerState?.() !== 1)
+              ytPlayerRef.current?.playVideo?.()
+          } catch {}
+        }, 400)
+        setTimeout(() => {
+          try {
+            if (roomRef.current?.isPlaying && ytPlayerRef.current?.getPlayerState?.() !== 1)
+              ytPlayerRef.current?.playVideo?.()
+          } catch {}
+        }, 1200)
+        return
+      }
+      // Page came back to foreground — re-sync
       try {
-        const p = ytPlayerRef.current
-        const liveRoom = roomRef.current
-        if (!p || !liveRoom?.isPlaying) return
         const state = p.getPlayerState?.()
         if (state !== 1) {
           if (liveRoom.currentTime) p.seekTo?.(liveRoom.currentTime, true)
@@ -993,7 +1040,54 @@ export default function RoomPage() {
     }
     document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
-  }, [room?.isPlaying, volume])
+  }, [volume])
+
+  // ─── MediaSession API: lock-screen / notification controls (iOS 14.5+, Android Chrome) ───
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return
+    const track = room?.currentTrack
+    navigator.mediaSession.metadata = track
+      ? new MediaMetadata({
+          title: track.title || 'Unknown',
+          artist: (track.channelTitle || '').replace(/\s*-\s*Topic$/i, ''),
+          artwork: track.thumbnail ? [{ src: track.thumbnail, sizes: '320x180', type: 'image/jpeg' }] : [],
+        })
+      : null
+    navigator.mediaSession.playbackState = room?.isPlaying ? 'playing' : 'paused'
+  }, [room?.currentTrack?.videoId, room?.isPlaying])
+
+  useEffect(() => {
+    if (!('mediaSession' in navigator) || !canControl) return
+    const seek = (details) => {
+      if (typeof details.seekTime !== 'number') return
+      ytPlayerRef.current?.seekTo?.(details.seekTime, true)
+      updatePlayback(roomId, { currentTime: details.seekTime })
+    }
+    navigator.mediaSession.setActionHandler('play', () => {
+      ytPlayerRef.current?.playVideo?.()
+      updatePlayback(roomId, { isPlaying: true, currentTime: ytPlayerRef.current?.getCurrentTime?.() || 0 })
+    })
+    navigator.mediaSession.setActionHandler('pause', () => {
+      ytPlayerRef.current?.pauseVideo?.()
+      updatePlayback(roomId, { isPlaying: false, currentTime: ytPlayerRef.current?.getCurrentTime?.() || 0 })
+    })
+    navigator.mediaSession.setActionHandler('nexttrack', isHost ? () => skipToNext(roomId) : null)
+    navigator.mediaSession.setActionHandler('previoustrack', null)
+    navigator.mediaSession.setActionHandler('seekto', seek)
+    return () => {
+      ;['play','pause','nexttrack','previoustrack','seekto'].forEach(a => {
+        try { navigator.mediaSession.setActionHandler(a, null) } catch {}
+      })
+    }
+  }, [canControl, isHost, roomId])
+
+  // ─── Wake Lock: prevent screen sleep while playing (Android / desktop) ───
+  useEffect(() => {
+    if (!room?.isPlaying || !('wakeLock' in navigator)) return
+    let lock = null
+    navigator.wakeLock.request('screen').then(l => { lock = l }).catch(() => {})
+    return () => { lock?.release?.().catch(() => {}) }
+  }, [room?.isPlaying])
 
   // ─── Floating new message bubble on mobile ───
   useEffect(() => {
@@ -1141,7 +1235,42 @@ export default function RoomPage() {
     skipToNext(roomId)
   }, [room?.skipRequested])
 
+  // Start (or resume) a near-silent oscillator piped into an <audio> element.
+  // Chrome classifies tabs with a playing HTMLMediaElement as "active audio" and
+  // allows background JS + playVideo() calls to succeed — which is what lets us
+  // fight back YouTube's auto-pause when the user switches apps.
+  //
+  // IMPORTANT: We use a real <audio src=blobURL> here, NOT a MediaStream.
+  // AudioContexts are suspended by Chrome when a tab goes to background, making
+  // the MediaStream approach silently fail at the worst possible moment.
+  // A looping <audio> with a real src stays "active audio" even when hidden.
+  function initAudioKeepAlive() {
+    if (keepAliveAudioRef.current) {
+      keepAliveAudioRef.current.play().catch(() => {})
+      return
+    }
+    try {
+      // Build a 0.1-second silent WAV (800 samples @ 8 kHz, 8-bit PCM) in memory.
+      const sr = 8000, n = 800
+      const buf = new ArrayBuffer(44 + n)
+      const dv = new DataView(buf)
+      const ws = (o, s) => [...s].forEach((c, i) => dv.setUint8(o + i, c.charCodeAt(0)))
+      ws(0, 'RIFF'); dv.setUint32(4, 36 + n, true); ws(8, 'WAVE')
+      ws(12, 'fmt '); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true)
+      dv.setUint16(22, 1, true); dv.setUint32(24, sr, true)
+      dv.setUint32(28, sr, true); dv.setUint16(32, 1, true); dv.setUint16(34, 8, true)
+      ws(36, 'data'); dv.setUint32(40, n, true)
+      new Uint8Array(buf, 44).fill(0x80) // 0x80 = silence for 8-bit PCM
+      const audio = new Audio(URL.createObjectURL(new Blob([buf], { type: 'audio/wav' })))
+      audio.loop = true
+      audio.volume = 0.001  // must be > 0 — volume=0 makes Chrome ignore it for "active audio" classification
+      audio.play().catch(() => {})
+      keepAliveAudioRef.current = audio
+    } catch {}
+  }
+
   function handlePlayerReady(e) {
+    initAudioKeepAlive()
     try {
       ytPlayerRef.current = e.target
       // Always use roomRef.current — the closure captures a stale `room` at mount time
@@ -1171,6 +1300,7 @@ export default function RoomPage() {
 
   async function handleStateChange(e) {
     const YT = window.YT?.PlayerState
+
     if (YT && (e.data === YT.PLAYING || e.data === YT.BUFFERING)) {
       clearTimeout(mobileSkipTimerRef.current)
       // Always unmute when playback starts — iOS remutes on every new video load
@@ -1188,6 +1318,19 @@ export default function RoomPage() {
       } else if (e.data === YT.PAUSED) {
         const pauseTime = e.target.getCurrentTime()
         clearTimeout(pauseDebounceRef.current)
+        // If the page is hidden (user switched app), YouTube auto-paused us.
+        // Fight back: re-play immediately AND retry after 300 ms because
+        // YouTube sometimes fires a second pause event if it detects hidden again.
+        if (document.hidden && roomRef.current?.isPlaying) {
+          try { e.target.playVideo?.() } catch {}
+          setTimeout(() => {
+            try {
+              if (document.hidden && roomRef.current?.isPlaying && ytPlayerRef.current?.getPlayerState?.() !== 1)
+                ytPlayerRef.current?.playVideo?.()
+            } catch {}
+          }, 300)
+          return
+        }
         pauseDebounceRef.current = setTimeout(async () => {
           if (document.hidden) return
           await updatePlayback(roomId, { isPlaying: false, currentTime: pauseTime })
@@ -1209,6 +1352,28 @@ export default function RoomPage() {
   async function handlePlayerError(e) {
     clearTimeout(mobileSkipTimerRef.current)
     const liveIsHost = roomRef.current?.hostId === user?.uid
+
+    // Error 101/150 = embedding blocked (common with "- Topic" auto-generated channels).
+    // If the track came from a user playlist, reload in playlist context — YouTube allows
+    // playlist-owner's videos to play even when standalone embedding is restricted.
+    // Guard: only try once per videoId to prevent an infinite error loop.
+    if (e.data === 101 || e.data === 150) {
+      const failedTrack = roomRef.current?.currentTrack
+      if (
+        failedTrack?.playlistId &&
+        typeof failedTrack?.playlistPosition === 'number' &&
+        playlistTriedRef.current !== failedTrack.videoId
+      ) {
+        playlistTriedRef.current = failedTrack.videoId
+        try {
+          const p = ytPlayerRef.current
+          p?.setLoop?.(false)
+          p?.loadPlaylist?.({ list: failedTrack.playlistId, listType: 'playlist', index: failedTrack.playlistPosition })
+          return
+        } catch {}
+      }
+    }
+
     if (liveIsHost) {
       await skipToNext(roomId)
     } else {
@@ -1360,7 +1525,7 @@ export default function RoomPage() {
     return (
       <div
         onClick={() => {
-          try { const AC = window.AudioContext || window.webkitAudioContext; if (AC) new AC().resume() } catch {}
+          initAudioKeepAlive()
           setMobileTapped(true)
         }}
         style={{ minHeight: '100dvh', background: 'var(--bg)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24, padding: 32, cursor: 'pointer', position: 'relative', overflow: 'hidden' }}
@@ -1389,6 +1554,19 @@ export default function RoomPage() {
   const hiddenPlayer = room.currentTrack ? (
     <div style={{ position: 'fixed', width: 1, height: 1, opacity: 0, pointerEvents: 'none', overflow: 'hidden', zIndex: -1, top: 0, left: 0 }}
       hidden={!musicMode}>
+    </div>
+  ) : null
+
+  // ─── Shared: Watch URL iframe (shown instead of queue player when set) ───
+  const watchUrlEl = room.watchUrl ? (
+    <div style={{ position: 'relative', width: '100%', paddingTop: '56.25%', overflow: 'hidden', flexShrink: 0, borderRadius: 8 }}>
+      <iframe
+        src={room.watchUrl}
+        allow="autoplay; fullscreen; picture-in-picture"
+        allowFullScreen
+        style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
+        title="Watch together"
+      />
     </div>
   ) : null
 
@@ -1442,6 +1620,18 @@ export default function RoomPage() {
 
   // ─── Shared: Player center content ───
   function PlayerContent({ compact = false }) {
+    // ── Watch URL mode: fullscreen iframe, no queue controls ──
+    if (room.watchUrl) return (
+      <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 10, padding: compact ? 8 : 0 }}>
+        {watchUrlEl}
+        {isHost && (
+          <div style={{ textAlign: 'center', fontSize: '0.72rem', color: 'var(--text-dim)', fontStyle: 'italic' }}>
+            📺 Watching together · only you can see controls inside the video
+          </div>
+        )}
+      </div>
+    )
+
     return room.currentTrack ? (
       <>
         {musicMode && !compact && <MusicVisualizer track={room.currentTrack} isPlaying={room.isPlaying} />}

@@ -1,0 +1,20 @@
+{
+  "appId": "com.wevibe.app",
+  "appName": "WE VIBE",
+  "webDir": "out",
+  "server": {
+    "url": "https://we-vibe-five.vercel.app/",
+    "cleartext": false,
+    "androidScheme": "https"
+  },
+  "android": {
+    "backgroundColor": "#0a0a0a",
+    "allowMixedContent": false
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 0,
+      "backgroundColor": "#0a0a0a"
+    }
+  }
+}

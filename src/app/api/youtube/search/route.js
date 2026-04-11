@@ -48,8 +48,6 @@ export async function GET(request) {
       durationMap[v.id] = parseDuration(v.contentDetails.duration)
     })
 
-    // Note: "- Topic" auto-generated channels are kept — they're the cleanest pure audio versions.
-    // videoEmbeddable=true&videoSyndicated=true already filters unplayable ones at the API level.
     const results = searchData.items
       .map((item) => ({
       videoId: item.id.videoId,
