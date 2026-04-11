@@ -1690,6 +1690,65 @@ export default function RoomPage() {
   }
 
   // ══════════════════════════════════════════
+  //  WATCH URL ROOM — MOBILE
+  // ══════════════════════════════════════════
+  if (room.watchUrl && isMobile) {
+    return (
+      <div style={{ height: '100dvh', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#000', position: 'relative' }}>
+        {/* Header */}
+        <header style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'rgba(13,13,13,0.97)', borderBottom: '1px solid var(--border)', zIndex: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Link href="/dashboard" style={{ fontFamily: 'Oswald', fontSize: '1.1rem', fontWeight: 700, color: 'var(--cyan)', textDecoration: 'none' }}>WE🕊️</Link>
+            <div style={{ fontFamily: 'Oswald', fontSize: '0.68rem', color: 'var(--cyan)', letterSpacing: '0.08em' }}>📺 WATCH ROOM</div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button onClick={copyCode} style={{ background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.3)', borderRadius: 8, padding: '5px 10px', cursor: 'pointer', fontFamily: 'Oswald', color: 'var(--cyan)', fontSize: '0.7rem' }}>
+              {copied ? '✅' : '📋'} {room.roomCode}
+            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'rgba(0,200,255,0.06)', border: '1px solid rgba(0,200,255,0.2)', borderRadius: 8, padding: '4px 8px' }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--cyan)', boxShadow: '0 0 6px var(--cyan)', display: 'inline-block' }} />
+              <span style={{ fontFamily: 'Oswald', fontSize: '0.7rem', color: 'var(--cyan)' }}>{room.participants?.length || 0}</span>
+            </div>
+            <button onClick={handleLeave} style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(233,30,99,0.1)', border: '1px solid rgba(233,30,99,0.3)', color: 'var(--pink)', cursor: 'pointer', fontSize: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+          </div>
+        </header>
+
+        {/* Video */}
+        <div style={{ flexShrink: 0, width: '100%', paddingTop: '56.25%', position: 'relative', background: '#000' }}>
+          <iframe
+            src={room.watchUrl}
+            allow="autoplay; fullscreen; picture-in-picture"
+            allowFullScreen
+            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
+            title="Watch together"
+          />
+        </div>
+
+        {/* Tabs: Chat | People */}
+        <div style={{ flexShrink: 0, display: 'flex', background: 'rgba(13,13,13,0.95)', borderBottom: '1px solid var(--border)' }}>
+          {[['chat','💬','Chat'],['people','👥','People']].map(([id, icon, label]) => (
+            <button key={id} onClick={() => setMobileTab(id)}
+              style={{ flex: 1, padding: '9px 4px 7px', background: 'transparent', border: 'none', borderBottom: `2px solid ${mobileTab === id ? 'var(--cyan)' : 'transparent'}`, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+              <span style={{ fontSize: '1rem' }}>{icon}</span>
+              <span style={{ fontFamily: 'Oswald', fontSize: '0.5rem', letterSpacing: '0.06em', textTransform: 'uppercase', color: mobileTab === id ? 'var(--cyan)' : 'var(--text-dim)' }}>{label}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Tab Content */}
+        <div style={{ flex: 1, overflow: 'hidden', minHeight: 0 }}>
+          <div style={{ display: mobileTab === 'people' ? 'flex' : 'none', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+            <ParticipantsPanel room={room} currentUser={user} isHost={isHost} roomId={roomId} />
+          </div>
+          <div style={{ display: mobileTab !== 'people' ? 'flex' : 'none', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+            <ChatPanel roomId={roomId} messages={messages} currentUser={user} />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ══════════════════════════════════════════
   //  MOBILE LAYOUT
   // ══════════════════════════════════════════
   if (isMobile) {
@@ -1818,6 +1877,74 @@ export default function RoomPage() {
             </div>
           )}
 
+        </div>
+      </div>
+    )
+  }
+
+  // ══════════════════════════════════════════
+  //  WATCH URL ROOM — DESKTOP
+  // ══════════════════════════════════════════
+  if (room.watchUrl) {
+    return (
+      <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#000', position: 'relative' }}>
+        <div className="grid-bg" style={{ opacity: 0.3 }} />
+
+        {/* Header */}
+        <header style={{ position: 'relative', zIndex: 10, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 24px', background: 'rgba(13,13,13,0.95)', borderBottom: '1px solid rgba(0,200,255,0.15)', backdropFilter: 'blur(20px)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <Link href="/dashboard" style={{ fontFamily: 'Oswald', fontSize: '1.2rem', fontWeight: 700, color: 'var(--cyan)', textDecoration: 'none', textShadow: '0 0 15px rgba(0,200,255,0.5)' }}>WE🕊️</Link>
+            <div style={{ width: 1, height: 20, background: 'var(--border)' }} />
+            <div>
+              <div style={{ fontFamily: 'Oswald', fontSize: '0.6rem', letterSpacing: '0.12em', color: 'var(--text-dim)', textTransform: 'uppercase' }}>Watch Room</div>
+              <div style={{ fontFamily: 'Oswald', fontSize: '1rem', fontWeight: 600, color: 'var(--cyan)' }}>📺 {room.name || room.roomCode}</div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div className="badge" style={{ background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.25)', color: 'var(--cyan)' }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--cyan)', boxShadow: '0 0 4px var(--cyan)', display: 'inline-block', marginRight: 5 }} />
+              {room.participants?.length || 0} watching
+            </div>
+            {isHost && <div className="badge" style={{ background: 'rgba(243,156,18,0.1)', border: '1px solid rgba(243,156,18,0.3)', color: '#f39c12' }}>⭐ HOST</div>}
+            <button onClick={copyCode} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.25)', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontFamily: 'Oswald', color: 'var(--cyan)', fontSize: '0.85rem', letterSpacing: '0.1em' }}>
+              {copied ? '✅' : '📋'} {room.roomCode}
+            </button>
+            <button onClick={handleLeave} className="btn-danger" style={{ padding: '7px 14px', fontSize: '0.8rem' }}>Leave</button>
+          </div>
+        </header>
+
+        {/* Body: video + chat */}
+        <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
+          {/* Video */}
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000', overflow: 'hidden', padding: '12px 0 12px 12px' }}>
+            <div style={{ width: '100%', height: '100%', maxWidth: 'calc((100% - 320px) * 1)', position: 'relative', borderRadius: 8, overflow: 'hidden' }}>
+              <iframe
+                src={room.watchUrl}
+                allow="autoplay; fullscreen; picture-in-picture"
+                allowFullScreen
+                style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
+                title="Watch together"
+              />
+            </div>
+          </div>
+
+          {/* Chat + People sidebar */}
+          <div style={{ width: 300, flexShrink: 0, borderLeft: '1px solid rgba(0,200,255,0.12)', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'rgba(13,13,13,0.8)' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', borderBottom: '1px solid var(--border)' }}>
+              {[['chat','💬 Chat'],['people','👥 People']].map(([id, label]) => (
+                <button key={id} onClick={() => setRightTab(id)}
+                  style={{ padding: '11px 8px', background: 'transparent', border: 'none', borderBottom: `2px solid ${rightTab === id ? 'var(--cyan)' : 'transparent'}`, marginBottom: -1, color: rightTab === id ? 'var(--cyan)' : 'var(--text-dim)', fontFamily: 'Oswald', fontSize: '0.72rem', letterSpacing: '0.08em', textTransform: 'uppercase', cursor: 'pointer', transition: 'color 0.2s' }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div style={{ flex: 1, overflow: 'hidden' }}>
+              {rightTab === 'chat'
+                ? <ChatPanel roomId={roomId} messages={messages} currentUser={user} />
+                : <ParticipantsPanel room={room} currentUser={user} isHost={isHost} roomId={roomId} />
+              }
+            </div>
+          </div>
         </div>
       </div>
     )
