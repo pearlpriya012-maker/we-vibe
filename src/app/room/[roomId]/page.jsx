@@ -909,6 +909,7 @@ export default function RoomPage() {
   const watchTimerRef = useRef(null)        // interval that increments watchTimeRef when playing
   const prevWatchUpdatedAt = useRef(null)   // tracks last Firestore update to avoid duplicate seeks
   const [watchTime, setWatchTime] = useState(0) // drives the seek bar UI
+  const [watchUrlInput, setWatchUrlInput] = useState('')
   const [ytToken, setYtToken] = useState(user?.youtubeAccessToken || null)
 
   const isHost = room?.hostId === user?.uid
@@ -1777,6 +1778,29 @@ export default function RoomPage() {
           </div>
         </header>
 
+        {/* URL Bar — host only */}
+        {isHost && (
+          <form onSubmit={e => {
+            e.preventDefault()
+            const s = watchUrlInput.trim()
+            if (!s) return
+            const ytMatch = s.match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/)
+            const url = ytMatch ? `https://www.youtube.com/embed/${ytMatch[1]}?autoplay=1&rel=0&enablejsapi=1` : (/^https?:\/\//i.test(s) ? s : null)
+            if (!url) { toast.error('Invalid URL'); return }
+            updateWatchPlayback(roomId, { watchUrl: url, watchIsPlaying: false, watchCurrentTime: 0, watchUpdatedAt: Date.now() })
+            setWatchUrlInput('')
+          }} style={{ flexShrink: 0, display: 'flex', gap: 8, padding: '7px 12px', background: 'rgba(13,13,13,0.97)', borderBottom: '1px solid rgba(0,200,255,0.12)' }}>
+            <span style={{ fontSize: '0.85rem', alignSelf: 'center', flexShrink: 0 }}>🔗</span>
+            <input
+              value={watchUrlInput}
+              onChange={e => setWatchUrlInput(e.target.value)}
+              placeholder={room.watchUrl || 'Paste new video URL…'}
+              style={{ flex: 1, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(0,200,255,0.2)', borderRadius: 8, padding: '6px 10px', color: '#fff', fontSize: '0.75rem', fontFamily: 'inherit', outline: 'none', minWidth: 0 }}
+            />
+            <button type="submit" style={{ flexShrink: 0, background: 'var(--cyan)', border: 'none', borderRadius: 8, padding: '6px 12px', color: '#000', fontFamily: 'Oswald', fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer', letterSpacing: '0.06em' }}>GO</button>
+          </form>
+        )}
+
         {/* Video */}
         <div style={{ flexShrink: 0, width: '100%', paddingTop: '56.25%', position: 'relative', background: '#000' }}>
           <iframe
@@ -2010,6 +2034,29 @@ export default function RoomPage() {
             <button onClick={handleLeave} className="btn-danger" style={{ padding: '7px 14px', fontSize: '0.8rem' }}>Leave</button>
           </div>
         </header>
+
+        {/* URL Bar — host only */}
+        {isHost && (
+          <form onSubmit={e => {
+            e.preventDefault()
+            const s = watchUrlInput.trim()
+            if (!s) return
+            const ytMatch = s.match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/)
+            const url = ytMatch ? `https://www.youtube.com/embed/${ytMatch[1]}?autoplay=1&rel=0&enablejsapi=1` : (/^https?:\/\//i.test(s) ? s : null)
+            if (!url) { toast.error('Invalid URL'); return }
+            updateWatchPlayback(roomId, { watchUrl: url, watchIsPlaying: false, watchCurrentTime: 0, watchUpdatedAt: Date.now() })
+            setWatchUrlInput('')
+          }} style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '8px 20px', background: 'rgba(13,13,13,0.97)', borderBottom: '1px solid rgba(0,200,255,0.12)', position: 'relative', zIndex: 10 }}>
+            <span style={{ fontSize: '0.9rem', flexShrink: 0 }}>🔗</span>
+            <input
+              value={watchUrlInput}
+              onChange={e => setWatchUrlInput(e.target.value)}
+              placeholder={room.watchUrl || 'Paste new video URL…'}
+              style={{ flex: 1, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(0,200,255,0.2)', borderRadius: 8, padding: '7px 14px', color: '#fff', fontSize: '0.82rem', fontFamily: 'inherit', outline: 'none' }}
+            />
+            <button type="submit" style={{ flexShrink: 0, background: 'var(--cyan)', border: 'none', borderRadius: 8, padding: '8px 18px', color: '#000', fontFamily: 'Oswald', fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer', letterSpacing: '0.08em', boxShadow: '0 0 12px rgba(0,200,255,0.3)' }}>GO</button>
+          </form>
+        )}
 
         {/* Body: video+controls column + chat sidebar */}
         <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
