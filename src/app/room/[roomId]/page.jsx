@@ -912,6 +912,7 @@ export default function RoomPage() {
   const [watchTime, setWatchTime] = useState(0) // drives the seek bar UI
   const [watchUrlInput, setWatchUrlInput] = useState('')
   const [watchCrop, setWatchCrop] = useState(false)
+  const [watchEmbedBlocked, setWatchEmbedBlocked] = useState(false)
   const [ytToken, setYtToken] = useState(user?.youtubeAccessToken || null)
 
   const isHost = room?.hostId === user?.uid
@@ -1056,6 +1057,19 @@ export default function RoomPage() {
     document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
   }, [volume])
+
+  // ─── Check if non-YT iframe URL allows embedding ───
+  useEffect(() => {
+    if (!room?.watchUrl || /youtube\.com\/embed/.test(room.watchUrl)) {
+      setWatchEmbedBlocked(false)
+      return
+    }
+    setWatchEmbedBlocked(false) // optimistic reset while checking
+    fetch(`/api/check-embed?url=${encodeURIComponent(room.watchUrl)}`)
+      .then(r => r.json())
+      .then(d => setWatchEmbedBlocked(!!d.blocked))
+      .catch(() => setWatchEmbedBlocked(false))
+  }, [room?.watchUrl])
 
   // ─── Watch URL room: real player helpers ───
   function watchPlay()         { try { watchYtPlayerRef.current?.playVideo?.()         } catch {} }
@@ -1839,6 +1853,13 @@ export default function RoomPage() {
               onReady={handleWatchPlayerReady}
               style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
             />
+          ) : watchEmbedBlocked ? (
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#111', gap: 10, padding: '0 20px' }}>
+              <span style={{ fontSize: '2.2rem' }}>🚫</span>
+              <p style={{ color: '#fff', fontFamily: 'Oswald', fontSize: '1rem', textAlign: 'center', margin: 0, letterSpacing: '0.03em' }}>This site blocks embedding</p>
+              <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: '0.78rem', textAlign: 'center', margin: 0, maxWidth: 240, lineHeight: 1.5 }}>They don't allow their content to be shown inside other apps.</p>
+              <a href={room.watchUrl} target="_blank" rel="noopener noreferrer" style={{ marginTop: 6, padding: '7px 18px', background: 'var(--cyan)', color: '#000', borderRadius: 8, fontFamily: 'Oswald', fontSize: '0.82rem', textDecoration: 'none', fontWeight: 700 }}>Open in new tab ↗</a>
+            </div>
           ) : (
             <iframe
               src={room.watchUrl}
@@ -2117,6 +2138,13 @@ export default function RoomPage() {
                   onReady={handleWatchPlayerReady}
                   style={{ width: '100%', height: '100%' }}
                 />
+              ) : watchEmbedBlocked ? (
+                <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#111', gap: 12, padding: '0 32px' }}>
+                  <span style={{ fontSize: '2.8rem' }}>🚫</span>
+                  <p style={{ color: '#fff', fontFamily: 'Oswald', fontSize: '1.1rem', textAlign: 'center', margin: 0, letterSpacing: '0.04em' }}>This site blocks embedding</p>
+                  <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: '0.85rem', textAlign: 'center', margin: 0, maxWidth: 320, lineHeight: 1.6 }}>They don't allow their content to be shown inside other apps.</p>
+                  <a href={room.watchUrl} target="_blank" rel="noopener noreferrer" style={{ marginTop: 8, padding: '9px 22px', background: 'var(--cyan)', color: '#000', borderRadius: 8, fontFamily: 'Oswald', fontSize: '0.88rem', textDecoration: 'none', fontWeight: 700 }}>Open in new tab ↗</a>
+                </div>
               ) : (
                 <iframe
                   src={room.watchUrl}
