@@ -911,6 +911,7 @@ export default function RoomPage() {
   const prevWatchUpdatedAt = useRef(null)   // tracks last Firestore update to avoid duplicate seeks
   const [watchTime, setWatchTime] = useState(0) // drives the seek bar UI
   const [watchUrlInput, setWatchUrlInput] = useState('')
+  const [watchCrop, setWatchCrop] = useState(false)
   const [ytToken, setYtToken] = useState(user?.youtubeAccessToken || null)
 
   const isHost = room?.hostId === user?.uid
@@ -1794,6 +1795,9 @@ export default function RoomPage() {
               <span style={{ fontFamily: 'Oswald', fontSize: '0.7rem', color: 'var(--cyan)' }}>{room.participants?.length || 0}</span>
             </div>
             <button onClick={handleLeave} style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(233,30,99,0.1)', border: '1px solid rgba(233,30,99,0.3)', color: 'var(--pink)', cursor: 'pointer', fontSize: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+            {!isYt && (
+              <button onClick={() => setWatchCrop(c => !c)} title="Crop to video" style={{ width: 32, height: 32, borderRadius: 8, background: watchCrop ? 'rgba(0,200,255,0.15)' : 'rgba(255,255,255,0.05)', border: `1px solid ${watchCrop ? 'rgba(0,200,255,0.4)' : 'rgba(255,255,255,0.1)'}`, color: watchCrop ? 'var(--cyan)' : 'var(--text-dim)', cursor: 'pointer', fontSize: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✂️</button>
+            )}
           </div>
         </header>
 
@@ -1821,7 +1825,7 @@ export default function RoomPage() {
         )}
 
         {/* Video */}
-        <div style={{ flexShrink: 0, width: '100%', paddingTop: '56.25%', position: 'relative', background: '#000' }}>
+        <div style={{ flexShrink: 0, width: '100%', paddingTop: '56.25%', position: 'relative', background: '#000', overflow: 'hidden' }}>
           {isYt ? (
             <YouTube
               key={room.watchUrl}
@@ -1835,7 +1839,7 @@ export default function RoomPage() {
               src={room.watchUrl}
               allow="autoplay; fullscreen; picture-in-picture"
               allowFullScreen
-              style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
+              style={{ position: 'absolute', top: watchCrop ? -65 : 0, left: 0, width: '100%', height: watchCrop ? 'calc(100% + 65px)' : '100%', border: 'none' }}
               title="Watch together"
             />
           )}
@@ -2084,6 +2088,9 @@ export default function RoomPage() {
               style={{ flex: 1, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(0,200,255,0.2)', borderRadius: 8, padding: '7px 14px', color: '#fff', fontSize: '0.82rem', fontFamily: 'inherit', outline: 'none' }}
             />
             <button type="submit" style={{ flexShrink: 0, background: 'var(--cyan)', border: 'none', borderRadius: 8, padding: '8px 18px', color: '#000', fontFamily: 'Oswald', fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer', letterSpacing: '0.08em', boxShadow: '0 0 12px rgba(0,200,255,0.3)' }}>GO</button>
+            {!isYt && (
+              <button type="button" onClick={() => setWatchCrop(c => !c)} title="Crop to video only" style={{ flexShrink: 0, background: watchCrop ? 'rgba(0,200,255,0.15)' : 'rgba(255,255,255,0.05)', border: `1px solid ${watchCrop ? 'rgba(0,200,255,0.4)' : 'rgba(255,255,255,0.15)'}`, borderRadius: 8, padding: '8px 12px', color: watchCrop ? 'var(--cyan)' : 'var(--text-dim)', cursor: 'pointer', fontSize: '0.8rem' }}>✂️ {watchCrop ? 'Cropped' : 'Crop'}</button>
+            )}
           </form>
         )}
 
@@ -2091,7 +2098,7 @@ export default function RoomPage() {
         <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
           {/* Video + Controls */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#000' }}>
-            <div style={{ flex: 1, overflow: 'hidden' }}>
+            <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
               {isYt ? (
                 <YouTube
                   key={room.watchUrl}
@@ -2105,7 +2112,7 @@ export default function RoomPage() {
                   src={room.watchUrl}
                   allow="autoplay; fullscreen; picture-in-picture"
                   allowFullScreen
-                  style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
+                  style={{ position: 'absolute', top: watchCrop ? -65 : 0, left: 0, width: '100%', height: watchCrop ? 'calc(100% + 65px)' : '100%', border: 'none', display: 'block' }}
                   title="Watch together"
                 />
               )}
