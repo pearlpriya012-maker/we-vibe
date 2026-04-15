@@ -1531,8 +1531,9 @@ export default function RoomPage() {
 
       // ── Animation state ──
       const anim = {
-        barHeights: Array.from({ length: 32 }, (_, i) => 0.1 + (i % 6) * 0.08),
-        barTargets: Array.from({ length: 32 }, () => Math.random()),
+        frame: 0,
+        barHeights: Array.from({ length: 40 }, (_, i) => 0.08 + (i % 7) * 0.06),
+        barTargets: Array.from({ length: 40 }, () => Math.random() * 0.5),
         thumbImg: null,
         thumbLoaded: false,
         lastTrackId: null,
@@ -1551,161 +1552,182 @@ export default function RoomPage() {
         return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
       }
 
-      // Layout zones (480×270)
-      const PAD = 20
-      const TOP_H = 44      // zone 1: top bar (y 0–44)
-      const INFO_Y = 52     // zone 2: track info starts
-      const INFO_H = 72     // thumbnail 66×66
-      const EQ_Y = 138      // zone 3: EQ bars base-line top
-      const EQ_H = 58       // max bar height
-      const PB_Y = 212      // zone 4: progress bar
-      const PB_H = 5
-
       function drawFrame() {
+        anim.frame++
         const liveRoom = roomRef.current
         const track = liveRoom?.currentTrack
         const playing = liveRoom?.isPlaying
 
-        // Reload thumbnail if track changed
         if (track?.videoId !== anim.lastTrackId) {
           anim.lastTrackId = track?.videoId || null
           anim.thumbLoaded = false; anim.thumbImg = null
           if (track?.thumbnail) loadThumb(track.thumbnail)
         }
 
-        // ── Zone 0: Background ──
-        ctx.fillStyle = '#0d0d0d'
+        // ── BG: vivid blurred art ──
+        ctx.fillStyle = '#080808'
         ctx.fillRect(0, 0, W, H)
         if (anim.thumbImg) {
           ctx.save()
-          ctx.filter = 'blur(24px) brightness(0.18) saturate(2)'
-          ctx.drawImage(anim.thumbImg, -40, -40, W + 80, H + 80)
+          ctx.filter = 'blur(28px) brightness(0.28) saturate(3)'
+          ctx.drawImage(anim.thumbImg, -60, -60, W + 120, H + 120)
           ctx.filter = 'none'
           ctx.restore()
         }
-        // Full dark overlay so zones are always readable
-        ctx.fillStyle = 'rgba(0,0,0,0.62)'
+        // Scrim: left half darker so text reads cleanly
+        const scrim = ctx.createLinearGradient(0, 0, W, 0)
+        scrim.addColorStop(0, 'rgba(0,0,0,0.82)')
+        scrim.addColorStop(0.55, 'rgba(0,0,0,0.55)')
+        scrim.addColorStop(1, 'rgba(0,0,0,0.2)')
+        ctx.fillStyle = scrim
         ctx.fillRect(0, 0, W, H)
+
+        // Top accent line (3px gradient)
+        const accentG = ctx.createLinearGradient(0, 0, W, 0)
+        accentG.addColorStop(0, '#00ff88')
+        accentG.addColorStop(0.5, '#00e5ff')
+        accentG.addColorStop(1, '#a855f7')
+        ctx.fillStyle = accentG
+        ctx.fillRect(0, 0, W, 3)
 
         ctx.textBaseline = 'alphabetic'
 
-        // ── Zone 1: Top bar ──
-        // Logo
-        ctx.fillStyle = '#00ff88'
-        ctx.font = 'bold 14px system-ui'
-        ctx.textAlign = 'left'
-        ctx.fillText('WE🕊️ VIBE', PAD, 30)
+        // ── Album art: right side, large ──
+        const artSz = 120, artX = W - artSz - 18, artY = (H - artSz) / 2 - 8
+        // Soft glow behind art
+        const glow = ctx.createRadialGradient(artX + artSz/2, artY + artSz/2, 10, artX + artSz/2, artY + artSz/2, artSz * 0.9)
+        glow.addColorStop(0, 'rgba(0,255,136,0.22)')
+        glow.addColorStop(1, 'rgba(0,255,136,0)')
+        ctx.fillStyle = glow
+        ctx.fillRect(artX - 20, artY - 20, artSz + 40, artSz + 40)
 
-        // Playing badge (right-aligned)
-        const badgeTxt = playing ? '▶  PLAYING' : '⏸  PAUSED'
-        const badgeW = 80, badgeH = 20, badgeX = W - PAD - badgeW, badgeY = 12
-        ctx.fillStyle = playing ? 'rgba(0,255,136,0.15)' : 'rgba(255,255,255,0.07)'
-        if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 4); ctx.fill() }
-        else ctx.fillRect(badgeX, badgeY, badgeW, badgeH)
-        ctx.fillStyle = playing ? '#00ff88' : '#555'
-        ctx.font = 'bold 10px system-ui'
-        ctx.textAlign = 'center'
-        ctx.fillText(badgeTxt, badgeX + badgeW / 2, badgeY + 13)
-
-        // Separator line
-        ctx.strokeStyle = 'rgba(255,255,255,0.08)'
-        ctx.lineWidth = 1
-        ctx.beginPath(); ctx.moveTo(PAD, TOP_H); ctx.lineTo(W - PAD, TOP_H); ctx.stroke()
-
-        // ── Zone 2: Track info (thumbnail + text) ──
-        const thumbSz = 66, thumbX = PAD, thumbY = INFO_Y
-        // Thumbnail
         ctx.save()
-        if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(thumbX, thumbY, thumbSz, thumbSz, 6); ctx.clip() }
-        else { ctx.beginPath(); ctx.rect(thumbX, thumbY, thumbSz, thumbSz); ctx.clip() }
+        const r = 10
+        ctx.beginPath()
+        if (ctx.roundRect) ctx.roundRect(artX, artY, artSz, artSz, r)
+        else ctx.rect(artX, artY, artSz, artSz)
+        ctx.clip()
         if (anim.thumbImg) {
-          ctx.drawImage(anim.thumbImg, thumbX, thumbY, thumbSz, thumbSz)
+          ctx.drawImage(anim.thumbImg, artX, artY, artSz, artSz)
         } else {
-          ctx.fillStyle = '#1c1c1c'; ctx.fillRect(thumbX, thumbY, thumbSz, thumbSz)
-          ctx.fillStyle = '#444'; ctx.font = '28px system-ui'
+          ctx.fillStyle = '#1c1c1c'; ctx.fillRect(artX, artY, artSz, artSz)
+          ctx.fillStyle = '#333'; ctx.font = '44px system-ui'
           ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
-          ctx.fillText('🎵', thumbX + thumbSz / 2, thumbY + thumbSz / 2)
+          ctx.fillText('🎵', artX + artSz/2, artY + artSz/2)
           ctx.textBaseline = 'alphabetic'
         }
         ctx.restore()
-        // Thumbnail border
-        ctx.strokeStyle = 'rgba(0,255,136,0.25)'; ctx.lineWidth = 1.5
-        if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(thumbX, thumbY, thumbSz, thumbSz, 6); ctx.stroke() }
-        else { ctx.strokeRect(thumbX, thumbY, thumbSz, thumbSz) }
+        // Art border
+        ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.lineWidth = 1.5
+        if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(artX, artY, artSz, artSz, r); ctx.stroke() }
+        else ctx.strokeRect(artX, artY, artSz, artSz)
 
-        // Text beside thumbnail
-        const tx = thumbX + thumbSz + 14
-        const maxTxtW = W - tx - PAD
+        // ── Left text column ──
+        const lx = 18, textMaxW = artX - lx - 16
+        ctx.textAlign = 'left'
 
+        // Logo
+        ctx.fillStyle = '#00ff88'
+        ctx.font = 'bold 12px system-ui'
+        ctx.fillText('WE🕊️ VIBE', lx, 26)
+
+        // Pulsing status dot
+        const pulse = 0.5 + 0.5 * Math.sin(anim.frame * 0.09)
+        const dotX = lx + 94, dotY = 20
+        ctx.beginPath(); ctx.arc(dotX, dotY, playing ? 4 + pulse * 1.5 : 3, 0, Math.PI * 2)
+        ctx.fillStyle = playing ? `rgba(0,255,136,${0.7 + pulse * 0.3})` : '#444'
+        ctx.fill()
+        ctx.fillStyle = playing ? '#00ff88' : '#444'
+        ctx.font = '10px system-ui'
+        ctx.fillText(playing ? 'LIVE' : 'PAUSED', dotX + 9, 25)
+
+        // Title — large, bold
         const title = track?.title || 'Nothing playing'
-        const shortTitle = title.length > 22 ? title.slice(0, 22) + '…' : title
+        const shortTitle = title.length > 20 ? title.slice(0, 20) + '…' : title
         ctx.fillStyle = '#ffffff'
-        ctx.font = 'bold 18px system-ui'
-        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'
-        ctx.fillText(shortTitle, tx, INFO_Y + 26)
+        ctx.font = 'bold 22px system-ui'
+        ctx.fillText(shortTitle, lx, 70)
 
+        // Artist
         const artist = (track?.channelTitle || '').replace(/\s*-\s*Topic$/i, '')
-        const shortArtist = artist.length > 26 ? artist.slice(0, 26) + '…' : artist
-        ctx.fillStyle = '#999'
+        const shortArtist = artist.length > 24 ? artist.slice(0, 24) + '…' : artist
+        ctx.fillStyle = '#888'
         ctx.font = '13px system-ui'
-        ctx.fillText(shortArtist, tx, INFO_Y + 48)
+        ctx.fillText(shortArtist, lx, 91)
 
-        // ── Zone 3: EQ bars (full width, centered) ──
-        const nBars = 32, barW = 7, barGap = 6
+        // ── Symmetric waveform (full width, center at y=150) ──
+        const nBars = 40, barW = 5, barGap = 6
         const barsTotal = nBars * (barW + barGap) - barGap
-        const barsX = (W - barsTotal) / 2
-        const barsBaseY = EQ_Y + EQ_H   // bars grow upward from here
+        const waveX = (W - barsTotal) / 2
+        const waveCY = 148   // vertical center of waveform
+        const maxHalf = 36   // max bar half-height (goes ±36px from center)
 
-        // Animate bar heights
         anim.barTargets = anim.barTargets.map((t, i) => {
-          if (Math.random() < 0.12)
-            return playing ? 0.15 + Math.random() * 0.85 : 0.04 + Math.random() * 0.08
+          if (Math.random() < 0.1)
+            return playing ? 0.2 + Math.random() * 0.8 : 0.03 + Math.random() * 0.06
           return t
         })
-        anim.barHeights = anim.barHeights.map((h, i) => h + (anim.barTargets[i] - h) * 0.16)
-
-        // Gradient for bars
-        const eqGrad = ctx.createLinearGradient(barsX, barsBaseY - EQ_H, barsX, barsBaseY)
-        eqGrad.addColorStop(0, playing ? '#00ff88' : '#2a2a2a')
-        eqGrad.addColorStop(0.5, playing ? '#00e5ff' : '#222')
-        eqGrad.addColorStop(1, playing ? '#a855f7' : '#1a1a1a')
+        anim.barHeights = anim.barHeights.map((h, i) => h + (anim.barTargets[i] - h) * 0.14)
 
         for (let i = 0; i < nBars; i++) {
-          const bh = Math.max(4, anim.barHeights[i] * EQ_H)
-          const bx = barsX + i * (barW + barGap)
-          const by = barsBaseY - bh
-          ctx.fillStyle = eqGrad
+          const bh = Math.max(2, anim.barHeights[i] * maxHalf)
+          const bx = waveX + i * (barW + barGap)
+
+          // Upper bar
+          const upGrad = ctx.createLinearGradient(0, waveCY - bh, 0, waveCY)
+          upGrad.addColorStop(0, playing ? '#00ff88' : '#2a2a2a')
+          upGrad.addColorStop(1, playing ? 'rgba(0,229,255,0.4)' : '#1a1a1a')
+          ctx.fillStyle = upGrad
           ctx.beginPath()
-          if (ctx.roundRect) ctx.roundRect(bx, by, barW, bh, 2)
-          else ctx.rect(bx, by, barW, bh)
+          if (ctx.roundRect) ctx.roundRect(bx, waveCY - bh, barW, bh, [2, 2, 0, 0])
+          else ctx.rect(bx, waveCY - bh, barW, bh)
+          ctx.fill()
+
+          // Lower bar (mirror)
+          const dnGrad = ctx.createLinearGradient(0, waveCY, 0, waveCY + bh)
+          dnGrad.addColorStop(0, playing ? 'rgba(0,229,255,0.4)' : '#1a1a1a')
+          dnGrad.addColorStop(1, playing ? '#a855f7' : '#111')
+          ctx.fillStyle = dnGrad
+          ctx.beginPath()
+          if (ctx.roundRect) ctx.roundRect(bx, waveCY, barW, bh, [0, 0, 2, 2])
+          else ctx.rect(bx, waveCY, barW, bh)
           ctx.fill()
         }
 
-        // ── Zone 4: Progress bar ──
+        // Center line between upper/lower bars
+        ctx.strokeStyle = playing ? 'rgba(0,255,136,0.3)' : 'rgba(255,255,255,0.06)'
+        ctx.lineWidth = 1
+        ctx.beginPath(); ctx.moveTo(waveX, waveCY); ctx.lineTo(waveX + barsTotal, waveCY); ctx.stroke()
+
+        // ── Progress bar ──
         try {
           const p = ytPlayerRef.current
           const ct = (typeof p?.getCurrentTime === 'function' ? p.getCurrentTime() : null) ?? 0
           const dur = (typeof p?.getDuration === 'function' ? p.getDuration() : null) ?? 0
           const pct = dur > 0 ? Math.min(1, ct / dur) : 0
-          const pbX = PAD, pbW = W - PAD * 2
+          const pbX = lx, pbY = H - 32, pbW = W - lx * 2, pbH = 4
 
-          ctx.fillStyle = 'rgba(255,255,255,0.1)'
-          if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(pbX, PB_Y, pbW, PB_H, 2.5); ctx.fill() }
-          else ctx.fillRect(pbX, PB_Y, pbW, PB_H)
+          ctx.fillStyle = 'rgba(255,255,255,0.08)'
+          if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(pbX, pbY, pbW, pbH, 2); ctx.fill() }
+          else ctx.fillRect(pbX, pbY, pbW, pbH)
 
           if (pct > 0) {
-            const fg = ctx.createLinearGradient(pbX, 0, pbX + pbW, 0)
-            fg.addColorStop(0, '#00ff88'); fg.addColorStop(1, '#00e5ff')
-            ctx.fillStyle = fg
-            if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(pbX, PB_Y, pbW * pct, PB_H, 2.5); ctx.fill() }
-            else ctx.fillRect(pbX, PB_Y, pbW * pct, PB_H)
+            const pfg = ctx.createLinearGradient(pbX, 0, pbX + pbW, 0)
+            pfg.addColorStop(0, '#00ff88'); pfg.addColorStop(1, '#00e5ff')
+            ctx.fillStyle = pfg
+            if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(pbX, pbY, pbW * pct, pbH, 2); ctx.fill() }
+            else ctx.fillRect(pbX, pbY, pbW * pct, pbH)
+
+            // Playhead dot
+            ctx.beginPath(); ctx.arc(pbX + pbW * pct, pbY + pbH / 2, 5, 0, Math.PI * 2)
+            ctx.fillStyle = '#fff'; ctx.fill()
           }
 
           ctx.fillStyle = '#555'
-          ctx.font = '11px system-ui'
+          ctx.font = '10px system-ui'
           ctx.textBaseline = 'alphabetic'
-          ctx.textAlign = 'left';  ctx.fillText(fmt(ct),  pbX, PB_Y + PB_H + 18)
-          ctx.textAlign = 'right'; ctx.fillText(fmt(dur), pbX + pbW, PB_Y + PB_H + 18)
+          ctx.textAlign = 'left';  ctx.fillText(fmt(ct),  pbX, H - 12)
+          ctx.textAlign = 'right'; ctx.fillText(fmt(dur), pbX + pbW, H - 12)
           ctx.textAlign = 'left'
         } catch {}
       }
