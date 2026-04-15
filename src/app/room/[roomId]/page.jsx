@@ -1305,6 +1305,22 @@ export default function RoomPage() {
     return () => clearInterval(iv)
   }, [isHost, room?.isPlaying, roomId])
 
+  // ─── Host: load new track when currentTrack changes in Firestore ─────────
+  // Covers: manual skip button, auto-advance after ENDED, participant skipRequest.
+  // The "Full Access" useEffect below only runs when participantsFullControl=true,
+  // so without this the host's player never loaded the next song after a skip.
+  useEffect(() => {
+    if (!room || !isHost || !room.currentTrack?.videoId) return
+    try {
+      const p = ytPlayerRef.current
+      if (!p) return
+      const vid = p.getVideoData?.()?.video_id
+      if (vid !== room.currentTrack.videoId) {
+        loadAndPlay(room.currentTrack.videoId, room.currentTime || 0)
+      }
+    } catch {}
+  }, [room?.currentTrack?.videoId])
+
   // ─── Host: follow Firestore when Full Access is on (guests can command the room) ───
   useEffect(() => {
     if (!room || !isHost || !room.participantsFullControl) return
