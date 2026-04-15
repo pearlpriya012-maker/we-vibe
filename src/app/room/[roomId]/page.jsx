@@ -906,6 +906,9 @@ export default function RoomPage() {
   const bgWatchdogRef = useRef(null)        // interval that fights YouTube auto-pause while tab is hidden
   const pipWindowRef = useRef(null)         // Document Picture-in-Picture floating mini-player window
   const pipSyncRef = useRef(null)           // interval that keeps pip DOM in sync with player state
+  const canvasPipRef = useRef(null)         // hidden canvas drawn with track info for mobile PiP
+  const videoPipRef = useRef(null)          // hidden <video> fed by canvas stream — requestPictureInPicture target
+  const canvasPipIntervalRef = useRef(null) // interval that redraws canvas every 600ms
   // Watch URL room sync
   const watchIframeRef = useRef(null)       // ref to watch URL <iframe> (non-YT only)
   const watchYtPlayerRef = useRef(null)     // real YT.Player for watch room YouTube videos
@@ -1498,6 +1501,153 @@ export default function RoomPage() {
     }
   }
 
+  // ─── Mobile Video Picture-in-Picture ─────────────────────────────────────
+  // Works on mobile Chrome (Android 8+). We draw track info onto a canvas,
+  // pipe it into a hidden <video> element, then call requestPictureInPicture()
+  // on that video. Chrome pops it out as a floating overlay — exactly like
+  // YouTube Premium — and keeps the tab alive even after you switch apps.
+  async function openMobilePip() {
+    if (!('pictureInPictureEnabled' in document) || !document.pictureInPictureEnabled) {
+      toast.error('Picture-in-Picture not supported in this browser')
+      return
+    }
+
+    // If already in PiP, exit it
+    if (document.pictureInPictureElement) {
+      await document.exitPictureInPicture().catch(() => {})
+      clearInterval(canvasPipIntervalRef.current)
+      return
+    }
+
+    try {
+      // ── Build canvas if not yet created ──
+      if (!canvasPipRef.current) {
+        const c = document.createElement('canvas')
+        c.width = 320; c.height = 180
+        canvasPipRef.current = c
+      }
+      const canvas = canvasPipRef.current
+      const ctx = canvas.getContext('2d')
+
+      // ── Draw function ──
+      function drawCanvas() {
+        const liveRoom = roomRef.current
+        const track = liveRoom?.currentTrack
+        const playing = liveRoom?.isPlaying
+
+        ctx.fillStyle = '#0d0d0d'
+        ctx.fillRect(0, 0, 320, 180)
+
+        // Green accent bar at top
+        const grad = ctx.createLinearGradient(0, 0, 320, 0)
+        grad.addColorStop(0, '#00ff88')
+        grad.addColorStop(1, '#00e5ff')
+        ctx.fillStyle = grad
+        ctx.fillRect(0, 0, 320, 4)
+
+        if (track?.thumbnail) {
+          // Draw blurred thumbnail as background
+          try {
+            const img = new window.Image()
+            img.crossOrigin = 'anonymous'
+            img.onload = () => {
+              ctx.save()
+              ctx.filter = 'blur(8px) brightness(0.25)'
+              ctx.drawImage(img, -20, -20, 360, 220)
+              ctx.filter = 'none'
+              ctx.restore()
+              // Redraw text on top after image loads
+              drawText(ctx, track, playing)
+            }
+            img.src = track.thumbnail
+          } catch {}
+        }
+        drawText(ctx, track, playing)
+      }
+
+      function drawText(ctx, track, playing) {
+        // We Vibe branding
+        ctx.fillStyle = '#00ff88'
+        ctx.font = 'bold 11px system-ui, sans-serif'
+        ctx.fillText('WE🕊️ VIBE', 16, 26)
+
+        // Play state indicator
+        ctx.fillStyle = playing ? '#00ff88' : '#888'
+        ctx.font = 'bold 14px system-ui'
+        ctx.fillText(playing ? '▶ PLAYING' : '⏸ PAUSED', 200, 26)
+
+        // Title
+        ctx.fillStyle = '#ffffff'
+        ctx.font = 'bold 16px system-ui'
+        const title = track?.title || 'Nothing playing'
+        ctx.fillText(title.length > 28 ? title.slice(0, 28) + '…' : title, 16, 90)
+
+        // Artist
+        ctx.fillStyle = '#888888'
+        ctx.font = '13px system-ui'
+        const artist = track?.channelTitle || ''
+        ctx.fillText(artist.length > 34 ? artist.slice(0, 34) + '…' : artist, 16, 114)
+
+        // Progress bar
+        try {
+          const p = ytPlayerRef.current
+          const ct = typeof p?.getCurrentTime === 'function' ? p.getCurrentTime() : 0
+          const dur = typeof p?.getDuration === 'function' ? p.getDuration() : 0
+          if (dur > 0) {
+            const pct = Math.min(1, ct / dur)
+            ctx.fillStyle = 'rgba(255,255,255,0.12)'
+            ctx.beginPath(); ctx.roundRect(16, 150, 288, 4, 2); ctx.fill()
+            const barGrad = ctx.createLinearGradient(16, 0, 16 + 288 * pct, 0)
+            barGrad.addColorStop(0, '#00ff88'); barGrad.addColorStop(1, '#00e5ff')
+            ctx.fillStyle = barGrad
+            ctx.beginPath(); ctx.roundRect(16, 150, 288 * pct, 4, 2); ctx.fill()
+            // Times
+            const fmt = s => { if (!s||!isFinite(s)) return '0:00'; return `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}` }
+            ctx.fillStyle = '#555'
+            ctx.font = '10px system-ui'
+            ctx.fillText(fmt(ct), 16, 168)
+            ctx.textAlign = 'right'
+            ctx.fillText(fmt(dur), 304, 168)
+            ctx.textAlign = 'left'
+          }
+        } catch {}
+      }
+
+      // ── Initial draw ──
+      drawCanvas()
+
+      // ── Wire canvas → video ──
+      if (!videoPipRef.current) {
+        const video = document.createElement('video')
+        video.muted = true
+        video.loop = true
+        video.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;top:0;left:0;'
+        document.body.appendChild(video)
+        videoPipRef.current = video
+      }
+      const video = videoPipRef.current
+      const stream = canvas.captureStream(2) // 2 fps — enough for text updates
+      video.srcObject = stream
+      await video.play()
+
+      // ── Enter PiP ──
+      await video.requestPictureInPicture()
+
+      // ── Keep canvas up to date ──
+      clearInterval(canvasPipIntervalRef.current)
+      canvasPipIntervalRef.current = setInterval(drawCanvas, 600)
+
+      // Stop interval when PiP is closed
+      video.addEventListener('leavepictureinpicture', () => {
+        clearInterval(canvasPipIntervalRef.current)
+      }, { once: true })
+
+      toast.success('Mini player active — switch apps freely!')
+    } catch (err) {
+      toast.error('Could not open mini player')
+    }
+  }
+
   function handlePlayerReady(e) {
     initAudioKeepAlive()
     try {
@@ -1904,12 +2054,14 @@ export default function RoomPage() {
               <button onClick={() => skipToNext(roomId)} style={{ width: compact ? 36 : 40, height: compact ? 36 : 40, borderRadius: '50%', background: 'var(--glass)', border: '1px solid var(--border)', cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}>⏭</button>
               {volumeWidget}
               {!compact && <button onClick={openMiniPlayer} title="Pop out mini player" style={{ width: 40, height: 40, borderRadius: '50%', background: pipWindowRef.current && !pipWindowRef.current?.closed ? 'rgba(0,255,136,0.15)' : 'var(--glass)', border: `1px solid ${pipWindowRef.current && !pipWindowRef.current?.closed ? 'var(--green)' : 'var(--border)'}`, cursor: 'pointer', fontSize: '0.85rem', color: pipWindowRef.current && !pipWindowRef.current?.closed ? 'var(--green)' : 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}>⧉</button>}
+              {compact && <button onClick={openMobilePip} title="Mini player" style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--glass)', border: '1px solid var(--border)', cursor: 'pointer', fontSize: '0.85rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>⧉</button>}
             </div>
           ) : (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
               <div style={{ textAlign: 'center', color: 'var(--text-dim)', fontSize: '0.8rem', fontStyle: 'italic' }}>{room.isPlaying ? '▶ Playing • Synced with host' : '⏸ Paused by host'}</div>
               {volumeWidget}
               {!compact && <button onClick={openMiniPlayer} title="Pop out mini player" style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--glass)', border: '1px solid var(--border)', cursor: 'pointer', fontSize: '0.85rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>⧉</button>}
+              {compact && <button onClick={openMobilePip} title="Mini player" style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--glass)', border: '1px solid var(--border)', cursor: 'pointer', fontSize: '0.85rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>⧉</button>}
             </div>
           )}
         </div>
