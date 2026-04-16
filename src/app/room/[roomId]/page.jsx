@@ -1711,9 +1711,9 @@ export default function RoomPage() {
       }
       const canvas = document.createElement('canvas')
       canvasPipRef.current = canvas
-      // with lyrics: 300×88 (album art square + content strip)
+      // with lyrics: 400×88 (album art + content strip)
       // no lyrics:    88×88 (album art square only)
-      const W = pipLyricsRef.current ? 300 : 88, H = 88
+      const W = pipLyricsRef.current ? 400 : 88, H = 88
       canvas.width = W; canvas.height = H
       const ctx = canvas.getContext('2d')
 
@@ -1826,14 +1826,7 @@ export default function RoomPage() {
         ctx.fillStyle = 'rgba(0,0,0,0.45)'
         ctx.fillRect(0, 0, W, H)
 
-        // ──────────────────────────────────────────────────────
-        // Layout A — 88×88 (no lyrics):
-        //   Album art 72×72 centred, bottom gradient, title overlay, EQ, pulse dot
-        // Layout B — 300×88 (with lyrics):
-        //   Left 80×80 album art | Right: title / artist / EQ bars / lyric lines
-        // ──────────────────────────────────────────────────────
-
-        // Width-aware truncation
+        // ── Width-aware truncation ──
         const truncW = (s, maxW) => {
           if (ctx.measureText(s).width <= maxW) return s
           let t = s
@@ -1841,163 +1834,128 @@ export default function RoomPage() {
           return t + '…'
         }
 
-        // Helper: draw centre-cropped rounded album art
-        const drawThumb = (x, y, sz, radius) => {
-          if (!anim.thumbImg) {
-            ctx.fillStyle = '#1a1a2e'; ctx.fillRect(x, y, sz, sz)
-            ctx.fillStyle = accentRGB; ctx.font = `${sz * 0.38}px system-ui`
-            ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
-            ctx.fillText('♫', x + sz / 2, y + sz / 2)
-            ctx.textBaseline = 'alphabetic'
-            return
-          }
+        // ── Helper: draw centre-cropped rounded album art ──
+        const drawThumb = (x, y, sz, r) => {
           ctx.save()
           ctx.beginPath()
-          if (ctx.roundRect) ctx.roundRect(x, y, sz, sz, radius)
-          else ctx.rect(x, y, sz, sz)
+          if (ctx.roundRect) ctx.roundRect(x, y, sz, sz, r); else ctx.rect(x, y, sz, sz)
           ctx.clip()
-          const iw = anim.thumbImg.naturalWidth  || anim.thumbImg.width
-          const ih = anim.thumbImg.naturalHeight || anim.thumbImg.height
-          let sx = 0, sy = 0, sw = iw, sh = ih
-          if (iw / ih > 1) { sw = ih; sx = (iw - sw) / 2 }
-          else              { sh = iw; sy = (ih - sh) / 2 }
-          ctx.drawImage(anim.thumbImg, sx, sy, sw, sh, x, y, sz, sz)
-          ctx.restore()
-          ctx.strokeStyle = `rgba(${ar},${ag},${ab},0.5)`
-          ctx.lineWidth = 1
-          if (ctx.roundRect) {
-            ctx.beginPath(); ctx.roundRect(x, y, sz, sz, radius); ctx.stroke()
+          if (anim.thumbImg) {
+            const iw = anim.thumbImg.naturalWidth  || anim.thumbImg.width
+            const ih = anim.thumbImg.naturalHeight || anim.thumbImg.height
+            let sx = 0, sy = 0, sw = iw, sh = ih
+            if (iw / ih > 1) { sw = ih; sx = (iw - sw) / 2 } else { sh = iw; sy = (ih - sh) / 2 }
+            ctx.drawImage(anim.thumbImg, sx, sy, sw, sh, x, y, sz, sz)
+          } else {
+            ctx.fillStyle = '#1a1a2e'; ctx.fillRect(x, y, sz, sz)
+            ctx.fillStyle = accentRGB; ctx.font = `${Math.round(sz * 0.38)}px system-ui`
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+            ctx.fillText('♫', x + sz / 2, y + sz / 2)
           }
+          ctx.restore()
+          ctx.strokeStyle = `rgba(${ar},${ag},${ab},0.5)`; ctx.lineWidth = 1
+          if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(x, y, sz, sz, r); ctx.stroke() }
         }
 
-        // Helper: draw EQ bars in a horizontal band
-        const drawEQBars = (bX, bRight, centerY, maxBarH, barW, gap) => {
-          const bPW = bRight - bX
-          const count = Math.floor((bPW + gap) / (barW + gap))
-          const now_s = Date.now() * 0.001
+        // ── Helper: draw animated EQ bars ──
+        const drawEQ = (x0, x1, cy, maxH, bw, gap) => {
+          const count = Math.floor((x1 - x0 + gap) / (bw + gap))
+          const ns = Date.now() * 0.001
           for (let i = 0; i < count; i++) {
-            const t   = i / (count - 1)
+            const t = i / Math.max(1, count - 1)
             const env = Math.pow(Math.sin(t * Math.PI), 0.55)
-            const p1  = now_s * 2.8  + t * Math.PI * 5.3 + i * 0.45
-            const p2  = now_s * 4.1  + t * Math.PI * 9.7 + i * 0.27
-            const p3  = now_s * 1.65 + t * Math.PI * 3.1 + i * 0.61
-            const raw = 0.45 + 0.30 * Math.sin(p1) + 0.17 * Math.sin(p2) + 0.08 * Math.sin(p3)
-            const h   = Math.max(1, maxBarH * env * Math.min(1, Math.max(0, raw)))
-            const cf  = 1 - Math.abs(t - 0.5) * 2
-            const wm  = cf * 0.6
-            const cr  = Math.min(255, Math.round(ar + (255 - ar) * wm))
-            const cg  = Math.min(255, Math.round(ag + (255 - ag) * wm))
-            const cb  = Math.min(255, Math.round(ab + (255 - ab) * wm))
-            ctx.shadowColor = `rgb(${cr},${cg},${cb})`
-            ctx.shadowBlur  = 2 + cf * 5
+            const raw = 0.45 + 0.30 * Math.sin(ns*2.8 + t*Math.PI*5.3 + i*0.45)
+                             + 0.17 * Math.sin(ns*4.1 + t*Math.PI*9.7 + i*0.27)
+                             + 0.08 * Math.sin(ns*1.65+ t*Math.PI*3.1 + i*0.61)
+            const h  = Math.max(1, maxH * env * Math.min(1, Math.max(0, raw)))
+            const cf = 1 - Math.abs(t - 0.5) * 2
+            const wm = cf * 0.6
+            const cr = Math.min(255, Math.round(ar + (255-ar)*wm))
+            const cg = Math.min(255, Math.round(ag + (255-ag)*wm))
+            const cb = Math.min(255, Math.round(ab + (255-ab)*wm))
+            ctx.shadowColor = `rgb(${cr},${cg},${cb})`; ctx.shadowBlur = 2 + cf * 5
             ctx.fillStyle   = `rgb(${cr},${cg},${cb})`
-            const xPos = bX + i * (barW + gap)
-            if (ctx.roundRect) {
-              ctx.beginPath(); ctx.roundRect(xPos, centerY - h, barW, h * 2, 0.5); ctx.fill()
-            } else {
-              ctx.fillRect(xPos, centerY - h, barW, h * 2)
-            }
+            const bx = x0 + i * (bw + gap)
+            if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(bx, cy-h, bw, h*2, 0.4); ctx.fill() }
+            else ctx.fillRect(bx, cy-h, bw, h*2)
           }
           ctx.shadowBlur = 0; ctx.shadowColor = 'transparent'
         }
 
+        ctx.textBaseline = 'alphabetic'
+
         if (!pipLyricsRef.current) {
-          // ── Layout A: 88×88 — album art square with title + EQ overlay ──
-          const sz = 72, ax = (W - sz) / 2, ay = 4
+          // ── Layout A: 88×88 — album art square, title + EQ at bottom ──
+          const sz = 72, ax = (W - sz) / 2, ay = 3
           drawThumb(ax, ay, sz, 6)
-
-          // Bottom gradient for text legibility
-          const grad = ctx.createLinearGradient(0, 54, 0, H)
-          grad.addColorStop(0, 'rgba(0,0,0,0)')
-          grad.addColorStop(1, 'rgba(0,0,0,0.84)')
-          ctx.fillStyle = grad; ctx.fillRect(0, 54, W, H - 54)
-
-          // Title
-          ctx.font = 'bold 9px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'
+          // bottom gradient
+          const g = ctx.createLinearGradient(0, 50, 0, H)
+          g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.85)')
+          ctx.fillStyle = g; ctx.fillRect(0, 50, W, H - 50)
+          // title
+          ctx.font = 'bold 8px system-ui'; ctx.textAlign = 'center'
           ctx.fillStyle = '#fff'
-          ctx.fillText(truncW(track?.title || '♫', W - 12), W / 2, 78)
-
-          // Thin EQ bars along bottom strip
-          drawEQBars(6, W - 6, H - 5, 3.5, 0.5, 1.5)
-
-          // Pulsing dot top-right
+          ctx.fillText(truncW(track?.title || '♫', W - 8), W / 2, 76)
+          // thin EQ strip
+          drawEQ(4, W - 4, H - 4, 3, 0.5, 1.5)
+          // pulse dot
           if (playing) {
-            const pulse = 0.55 + 0.45 * Math.sin(anim.frame * 0.14)
-            ctx.shadowColor = accentRGB; ctx.shadowBlur = 6
-            ctx.beginPath(); ctx.arc(W - 8, 8, 3.5, 0, Math.PI * 2)
-            ctx.fillStyle = `rgba(${ar},${ag},${ab},${pulse.toFixed(2)})`; ctx.fill()
+            const p = 0.55 + 0.45 * Math.sin(anim.frame * 0.14)
+            ctx.shadowColor = accentRGB; ctx.shadowBlur = 5
+            ctx.beginPath(); ctx.arc(W - 7, 7, 3, 0, Math.PI * 2)
+            ctx.fillStyle = `rgba(${ar},${ag},${ab},${p.toFixed(2)})`; ctx.fill()
             ctx.shadowBlur = 0; ctx.shadowColor = 'transparent'
           }
-
         } else {
-          // ── Layout B: 300×88 — album art left + info / EQ / lyrics right ──
+          // ── Layout B: 400×88 — 80×80 album art left + info panel right ──
           const sqSz = 80, sqX = 4, sqY = 4
           drawThumb(sqX, sqY, sqSz, 5)
 
-          // Right-panel bounds
           const txX = sqX + sqSz + 8   // x = 92
-          const txW = W - txX - 6      // ≈ 202 px
-
+          const txW = W - txX - 6      // ≈ 302 px
           const title  = track?.title || 'Nothing playing'
           const artist = (track?.channelTitle || '').replace(/\s*-\s*Topic$/i, '').trim()
 
           // Title
-          ctx.font = 'bold 11px system-ui'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'
+          ctx.font = 'bold 11px system-ui'; ctx.textAlign = 'left'
           ctx.fillStyle = '#fff'
-          ctx.fillText(truncW(title, txW), txX, 20)
-
+          ctx.fillText(truncW(title, txW), txX, 19)
           // Artist
-          ctx.font = '9px system-ui'
-          ctx.fillStyle = 'rgba(255,255,255,0.52)'
-          ctx.fillText(truncW(artist, txW), txX, 33)
-
-          // EQ bars — centred in right panel at y=46 ± 7 px
-          drawEQBars(txX, W - 6, 46, 7, 0.5, 1.8)
-
+          ctx.font = '9px system-ui'; ctx.fillStyle = 'rgba(255,255,255,0.52)'
+          ctx.fillText(truncW(artist, txW), txX, 32)
+          // EQ bars
+          drawEQ(txX, W - 6, 46, 7, 0.5, 1.8)
           // Lyrics
           const lyrSnap   = lyricsRef.current
           const hasSync   = lyrSnap?.synced && lyrSnap?.lines?.length > 0
           const plainText = (!hasSync && lyrSnap?.plain) ? lyrSnap.plain : null
           const hasPlain  = !!plainText && plainText.trim().length > 10
           const dimLyric  = `rgba(${ar},${ag},${ab},0.9)`
-
           if (hasSync) {
-            const lines     = lyrSnap.lines
-            const activeIdx = lines.reduce((best, line, i) => line.time <= ct ? i : best, 0)
+            const lines = lyrSnap.lines
+            const ai    = lines.reduce((best, l, i) => l.time <= ct ? i : best, 0)
             ctx.fillStyle = '#fff'; ctx.font = 'bold 11px system-ui'; ctx.textAlign = 'left'
-            ctx.fillText(truncW(lines[activeIdx].text, txW), txX, 65)
-            if (activeIdx + 1 < lines.length) {
-              ctx.fillStyle = dimLyric; ctx.font = '9px system-ui'
-              ctx.fillText(truncW(lines[activeIdx + 1].text, txW), txX, 79)
-            }
+            ctx.fillText(truncW(lines[ai].text, txW), txX, 65)
+            if (lines[ai + 1]) { ctx.fillStyle = dimLyric; ctx.font = '9px system-ui'; ctx.fillText(truncW(lines[ai + 1].text, txW), txX, 79) }
           } else if (hasPlain) {
-            const pLines = plainText.split('\n').map(l => l.trim()).filter(l => l.length > 0)
-            const pIdx   = dur > 5 ? Math.min(pLines.length - 1, Math.floor((ct / dur) * pLines.length)) : 0
+            const pl  = plainText.split('\n').map(l => l.trim()).filter(l => l)
+            const pi  = dur > 5 ? Math.min(pl.length - 1, Math.floor((ct / dur) * pl.length)) : 0
             ctx.fillStyle = '#fff'; ctx.font = 'bold 11px system-ui'; ctx.textAlign = 'left'
-            ctx.fillText(truncW(pLines[pIdx] || '', txW), txX, 65)
-            if (pLines[pIdx + 1]) {
-              ctx.fillStyle = dimLyric; ctx.font = '9px system-ui'
-              ctx.fillText(truncW(pLines[pIdx + 1], txW), txX, 79)
-            }
+            ctx.fillText(truncW(pl[pi] || '', txW), txX, 65)
+            if (pl[pi + 1]) { ctx.fillStyle = dimLyric; ctx.font = '9px system-ui'; ctx.fillText(truncW(pl[pi + 1], txW), txX, 79) }
           } else {
-            ctx.fillStyle = 'rgba(255,255,255,0.32)'
-            ctx.font = '9px system-ui'; ctx.textAlign = 'left'
+            ctx.fillStyle = 'rgba(255,255,255,0.32)'; ctx.font = '9px system-ui'; ctx.textAlign = 'left'
             ctx.fillText('No lyrics available', txX, 65)
           }
-
-          // Progress bar at very bottom, full width
-          const pbY = H - 3, pbH = 2
-          ctx.fillStyle = 'rgba(255,255,255,0.12)'
-          ctx.fillRect(0, pbY, W, pbH)
-          ctx.fillStyle = accentRGB
-          ctx.fillRect(0, pbY, W * pct, pbH)
-
-          // Pulsing dot top-right
+          // Progress bar
+          ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(0, H - 3, W, 2)
+          ctx.fillStyle = accentRGB; ctx.fillRect(0, H - 3, W * pct, 2)
+          // Pulse dot
           if (playing) {
-            const pulse = 0.55 + 0.45 * Math.sin(anim.frame * 0.14)
-            ctx.shadowColor = accentRGB; ctx.shadowBlur = 6
-            ctx.beginPath(); ctx.arc(W - 8, 8, 3.5, 0, Math.PI * 2)
-            ctx.fillStyle = `rgba(${ar},${ag},${ab},${pulse.toFixed(2)})`; ctx.fill()
+            const p = 0.55 + 0.45 * Math.sin(anim.frame * 0.14)
+            ctx.shadowColor = accentRGB; ctx.shadowBlur = 5
+            ctx.beginPath(); ctx.arc(W - 7, 7, 3, 0, Math.PI * 2)
+            ctx.fillStyle = `rgba(${ar},${ag},${ab},${p.toFixed(2)})`; ctx.fill()
             ctx.shadowBlur = 0; ctx.shadowColor = 'transparent'
           }
         }
