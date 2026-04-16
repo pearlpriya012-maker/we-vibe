@@ -1242,8 +1242,11 @@ export default function RoomPage() {
       mobileSkipTimerRef.current = setTimeout(async () => {
         const state = ytPlayerRef.current?.getPlayerState?.()
         if (state === -1) {
-          if (isHost) await skipToNext(roomId)
-          else {
+          if (isHost) {
+            if (Date.now() - lastSkipAtRef.current < 4000) return
+            lastSkipAtRef.current = Date.now()
+            await skipToNext(roomId)
+          } else {
             const { updateDoc, doc } = await import('firebase/firestore')
             const { db } = await import('@/lib/firebase')
             await updateDoc(doc(db, 'rooms', roomId), { skipRequested: Date.now() })
@@ -1358,6 +1361,11 @@ export default function RoomPage() {
     if (!isHost || !room?.skipRequested) return
     const age = Date.now() - room.skipRequested
     if (age > 15000) return // stale, ignore
+    // Guard against double-skip: handleStateChange or PiP watchdog may have already
+    // called skipToNext for the same song end event that caused the participant to
+    // write skipRequested. Without this, every non-host ENDED drains an extra song.
+    if (Date.now() - lastSkipAtRef.current < 4000) return
+    lastSkipAtRef.current = Date.now()
     skipToNext(roomId)
   }, [room?.skipRequested])
 
@@ -1872,8 +1880,11 @@ export default function RoomPage() {
           const state = ytPlayerRef.current?.getPlayerState?.()
           if (state === -1) {
             const liveIsHost = roomRef.current?.hostId === user?.uid
-            if (liveIsHost) await skipToNext(roomId)
-            else {
+            if (liveIsHost) {
+              if (Date.now() - lastSkipAtRef.current < 4000) return
+              lastSkipAtRef.current = Date.now()
+              await skipToNext(roomId)
+            } else {
               const { updateDoc, doc } = await import('firebase/firestore')
               const { db } = await import('@/lib/firebase')
               await updateDoc(doc(db, 'rooms', roomId), { skipRequested: Date.now() })
@@ -1966,6 +1977,8 @@ export default function RoomPage() {
     }
 
     if (liveIsHost) {
+      if (Date.now() - lastSkipAtRef.current < 4000) return // another skip already in flight
+      lastSkipAtRef.current = Date.now()
       await skipToNext(roomId)
     } else {
       // Non-host: signal host to skip the unplayable video
