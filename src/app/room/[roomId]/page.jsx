@@ -1631,7 +1631,7 @@ export default function RoomPage() {
         canvasPipRef.current = c
       }
       const canvas = canvasPipRef.current
-      canvas.width = 360; canvas.height = 128
+      canvas.width = 280; canvas.height = 90
       const W = canvas.width, H = canvas.height
       const ctx = canvas.getContext('2d')
 
@@ -1660,7 +1660,6 @@ export default function RoomPage() {
         anim.frame++
         const liveRoom = roomRef.current
         const track = liveRoom?.currentTrack
-        const playing = liveRoom?.isPlaying
 
         if (track?.videoId !== anim.lastTrackId) {
           anim.lastTrackId = track?.videoId || null
@@ -1726,13 +1725,13 @@ export default function RoomPage() {
             { idx: activeIdx,     active: true  },
             { idx: activeIdx + 1, active: false },
           ]
-          const lyYs = [14, 26, 38]
+          const lyYs = [10, 19, 28]
           slots.forEach(({ idx, active }, slot) => {
             if (idx < 0 || idx >= lines.length) return
             const raw = lines[idx].text
             const text = raw.length > 44 ? raw.slice(0, 43) + '…' : raw
             ctx.fillStyle = active ? 'rgba(0,0,0,0.86)' : 'rgba(0,0,0,0.28)'
-            ctx.font = active ? 'bold 9px system-ui' : '8px system-ui'
+            ctx.font = active ? 'bold 8px system-ui' : '7px system-ui'
             ctx.textAlign = 'left'
             ctx.fillText(text, rpX, lyYs[slot])
           })
@@ -1742,26 +1741,26 @@ export default function RoomPage() {
         const title = track?.title || 'Nothing playing'
         const shortTitle = title.length > 27 ? title.slice(0, 26) + '…' : title
         ctx.fillStyle = '#111111'
-        ctx.font = 'bold 12px system-ui'
+        ctx.font = 'bold 10px system-ui'
         ctx.textAlign = 'left'
-        ctx.fillText(shortTitle, rpX, 55)
+        ctx.fillText(shortTitle, rpX, 40)
 
         // ── Artist name ──
         const artist = (track?.channelTitle || '').replace(/\s*-\s*Topic$/i, '').trim()
         const shortArtist = artist.length > 26 ? artist.slice(0, 25) + '…' : artist
         ctx.fillStyle = 'rgba(0,0,0,0.42)'
-        ctx.font = '9px system-ui'
+        ctx.font = '8px system-ui'
         ctx.textAlign = 'left'
-        ctx.fillText(shortArtist, rpX, 67)
+        ctx.fillText(shortArtist, rpX, 51)
 
         // ── Progress timestamps ──
         ctx.fillStyle = 'rgba(0,0,0,0.38)'
-        ctx.font = '8px system-ui'
-        ctx.textAlign = 'left';  ctx.fillText(fmt(ct),  rpX, 81)
-        ctx.textAlign = 'right'; ctx.fillText(fmt(dur), rpR, 81)
+        ctx.font = '7px system-ui'
+        ctx.textAlign = 'left';  ctx.fillText(fmt(ct),  rpX, 63)
+        ctx.textAlign = 'right'; ctx.fillText(fmt(dur), rpR, 63)
 
         // ── Progress bar ──
-        const pbY = 86, pbH = 2
+        const pbY = 68, pbH = 2
         ctx.fillStyle = 'rgba(0,0,0,0.10)'
         if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(rpX, pbY, rpW, pbH, 2); ctx.fill() }
         else ctx.fillRect(rpX, pbY, rpW, pbH)
@@ -1770,34 +1769,6 @@ export default function RoomPage() {
           if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(rpX, pbY, rpW * pct, pbH, 2); ctx.fill() }
           else ctx.fillRect(rpX, pbY, rpW * pct, pbH)
         }
-
-        // ── Controls row ──
-        const ctY = 110
-        const ctCX = rX + rW / 2   // center of right panel
-        const sp = 26
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
-
-        // |◄ Prev
-        ctx.fillStyle = 'rgba(0,0,0,0.62)'
-        ctx.font = '11px system-ui'
-        ctx.fillText('⏮', ctCX - sp * 2, ctY)
-
-        // ► Play (outlined circle)
-        ctx.strokeStyle = 'rgba(0,0,0,0.65)'; ctx.lineWidth = 1.2
-        ctx.beginPath(); ctx.arc(ctCX - sp, ctY, 9, 0, Math.PI * 2); ctx.stroke()
-        ctx.fillStyle = 'rgba(0,0,0,0.65)'
-        ctx.font = playing ? '8px system-ui' : '7px system-ui'
-        ctx.fillText(playing ? '⏸' : '▶', ctCX - sp + (playing ? 0 : 1), ctY)
-
-        // ►| Next
-        ctx.fillStyle = 'rgba(0,0,0,0.62)'
-        ctx.font = '11px system-ui'
-        ctx.fillText('⏭', ctCX, ctY)
-
-        // 👎 👍
-        ctx.font = '11px system-ui'
-        ctx.fillText('👎', ctCX + sp, ctY)
-        ctx.fillText('👍', ctCX + sp * 2, ctY)
       }
 
       // ── Animation loop ──
