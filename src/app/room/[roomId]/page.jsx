@@ -1888,26 +1888,27 @@ export default function RoomPage() {
         }
         ctx.shadowBlur = 0; ctx.shadowColor = 'transparent'
 
-        // ── ROW 3: Lyrics — 5 lines (1 prev + active + 3 next) ──
+        // ── ROW 3: Lyrics — 4 lines (1 prev + active + 2 next) ──
+        // Bars end at eqCY+eqMaxH = 55+12 = 67. Start lyrics at y=78 (11px breathing room).
+        // 4 lines × 19px spacing = 57px used → last line at y=135, fits in canvas (170px)
         const lyrSnap   = lyricsRef.current
         const hasSync   = lyrSnap?.synced && lyrSnap?.lines?.length > 0
         const plainText = (!hasSync && lyrSnap?.plain) ? lyrSnap.plain : null
         const hasPlain  = !!plainText && plainText.trim().length > 10
-        // 5 lines, 16px spacing, start y=68
-        const ly = [68, 84, 100, 116, 132]
-        const dimLyric = 'rgba(255,255,255,0.65)'
+        const ly        = [78, 97, 116, 135]   // 19px spacing, clear of bars
+        const dimLyric  = 'rgba(255,255,255,0.38)'  // dim enough to contrast with accent active
         if (hasSync) {
           const lines     = lyrSnap.lines
           const activeIdx = lines.reduce((best, line, i) => line.time <= ct ? i : best, 0)
           if (activeIdx > 0) {
-            ctx.fillStyle = dimLyric; ctx.font = '10px system-ui'; ctx.textAlign = 'left'
+            ctx.fillStyle = dimLyric; ctx.font = '9.5px system-ui'; ctx.textAlign = 'left'
             ctx.fillText(truncW(lines[activeIdx - 1].text, pW), pX, ly[0])
           }
           ctx.fillStyle = accentRGB; ctx.font = 'bold 12px system-ui'; ctx.textAlign = 'left'
           ctx.fillText(truncW(lines[activeIdx].text, pW), pX, ly[1])
-          for (let n = 1; n <= 3; n++) {
+          for (let n = 1; n <= 2; n++) {
             if (activeIdx + n < lines.length) {
-              ctx.fillStyle = dimLyric; ctx.font = '10px system-ui'; ctx.textAlign = 'left'
+              ctx.fillStyle = dimLyric; ctx.font = '9.5px system-ui'; ctx.textAlign = 'left'
               ctx.fillText(truncW(lines[activeIdx + n].text, pW), pX, ly[1 + n])
             }
           }
@@ -1915,20 +1916,20 @@ export default function RoomPage() {
           const pLines = plainText.split('\n').map(l => l.trim()).filter(l => l.length > 0)
           const pIdx   = dur > 5 ? Math.min(pLines.length - 1, Math.floor((ct / dur) * pLines.length)) : 0
           if (pIdx > 0 && pLines[pIdx - 1]) {
-            ctx.fillStyle = dimLyric; ctx.font = '10px system-ui'; ctx.textAlign = 'left'
+            ctx.fillStyle = dimLyric; ctx.font = '9.5px system-ui'; ctx.textAlign = 'left'
             ctx.fillText(truncW(pLines[pIdx - 1], pW), pX, ly[0])
           }
           ctx.fillStyle = accentRGB; ctx.font = 'bold 12px system-ui'; ctx.textAlign = 'left'
           ctx.fillText(truncW(pLines[pIdx] || '', pW), pX, ly[1])
-          for (let n = 1; n <= 3; n++) {
+          for (let n = 1; n <= 2; n++) {
             if (pLines[pIdx + n]) {
-              ctx.fillStyle = dimLyric; ctx.font = '10px system-ui'; ctx.textAlign = 'left'
+              ctx.fillStyle = dimLyric; ctx.font = '9.5px system-ui'; ctx.textAlign = 'left'
               ctx.fillText(truncW(pLines[pIdx + n], pW), pX, ly[1 + n])
             }
           }
         } else {
-          ctx.fillStyle = 'rgba(255,255,255,0.40)'
-          ctx.font = '10px system-ui'; ctx.textAlign = 'left'
+          ctx.fillStyle = 'rgba(255,255,255,0.38)'
+          ctx.font = '9.5px system-ui'; ctx.textAlign = 'left'
           ctx.fillText('No lyrics available', pX, ly[1])
         }
 
