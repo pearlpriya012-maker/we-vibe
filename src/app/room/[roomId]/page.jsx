@@ -1782,6 +1782,8 @@ export default function RoomPage() {
         // ── TOP: 3-line lyrics (prev / ACTIVE / next) ──
         const lyrSnap = lyricsRef.current
         const hasSync = lyrSnap?.synced && lyrSnap?.lines?.length > 0
+        const plainText = (!hasSync && lyrSnap?.plain) ? lyrSnap.plain : null
+        const hasPlain = !!plainText && plainText.trim().length > 10
         if (hasSync) {
           const lines = lyrSnap.lines
           const activeIdx = lines.reduce((best, line, i) => line.time <= ct ? i : best, 0)
@@ -1798,12 +1800,31 @@ export default function RoomPage() {
             ctx.font = '10px system-ui'; ctx.textAlign = 'left'
             ctx.fillText(truncLyric(lines[activeIdx + 1].text, 50), pX, 47)
           }
+        } else if (hasPlain) {
+          // Plain (unsynced) lyrics — scroll by time proportion
+          const pLines = plainText.split('\n').map(l => l.trim()).filter(l => l.length > 0)
+          const pIdx = dur > 5
+            ? Math.min(pLines.length - 1, Math.floor((ct / dur) * pLines.length))
+            : 0
+          if (pIdx > 0 && pLines[pIdx - 1]) {
+            ctx.fillStyle = 'rgba(255,255,255,0.3)'
+            ctx.font = '10px system-ui'; ctx.textAlign = 'left'
+            ctx.fillText(truncLyric(pLines[pIdx - 1], 50), pX, 15)
+          }
+          ctx.fillStyle = accentRGB
+          ctx.font = 'bold 13px system-ui'; ctx.textAlign = 'left'
+          ctx.fillText(truncLyric(pLines[pIdx] || '', 45), pX, 32)
+          if (pLines[pIdx + 1]) {
+            ctx.fillStyle = 'rgba(255,255,255,0.3)'
+            ctx.font = '10px system-ui'; ctx.textAlign = 'left'
+            ctx.fillText(truncLyric(pLines[pIdx + 1], 50), pX, 47)
+          }
         } else {
-          // No lyrics — show title centred
+          // No lyrics — show title
           const title0 = track?.title || 'Nothing playing'
-          ctx.fillStyle = 'rgba(255,255,255,0.55)'
-          ctx.font = '11px system-ui'; ctx.textAlign = 'left'
-          ctx.fillText(truncLyric(title0, 55), pX, 28)
+          ctx.fillStyle = 'rgba(255,255,255,0.72)'
+          ctx.font = 'bold 11px system-ui'; ctx.textAlign = 'left'
+          ctx.fillText(truncLyric(title0, 52), pX, 32)
         }
 
         // ── Divider ──
@@ -1824,7 +1845,7 @@ export default function RoomPage() {
         const botY   = 82   // top of bottom zone
         const sqSize = 52   // album thumbnail square
         const sqX    = pX   // left aligned
-        const sqY    = H - sqSize - 6  // = 112  (bottom at H-6=164)
+        const sqY    = 86   // just below artist text (y=77); bottom at 138
         const wvX    = sqX + sqSize + 8 // waves start here
         const wvR    = pR
         const wvW    = wvR - wvX
@@ -1865,9 +1886,9 @@ export default function RoomPage() {
         const eqCY     = sqY + sqSize / 2   // center Y — vertically aligned with album square
         const eqMaxH   = sqSize / 2 - 1     // max half-height = 25px (fills album height)
         const now_s    = Date.now() * 0.001
-        const eqCount  = 72                 // number of bars
-        const eqGap    = 1                  // gap between bars
-        const eqBW     = Math.max(1, Math.floor((wvW - eqGap * (eqCount - 1)) / eqCount))
+        const eqBW     = 2                  // thin bars (2 px)
+        const eqGap    = 2                  // gap between bars
+        const eqCount  = Math.floor((wvW + eqGap) / (eqBW + eqGap))
 
         for (let i = 0; i < eqCount; i++) {
           const t = i / (eqCount - 1)   // 0..1 position across
