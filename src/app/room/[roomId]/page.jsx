@@ -1860,7 +1860,7 @@ export default function RoomPage() {
         const eqCY    = 62
         const eqMaxH  = 9
         const now_s   = Date.now() * 0.001
-        const eqBW    = 1
+        const eqBW    = 0.5
         const eqGap   = 2
         const eqCount = Math.floor((pW + eqGap) / (eqBW + eqGap))
 
@@ -1880,7 +1880,7 @@ export default function RoomPage() {
           const cg   = Math.min(255, Math.round(ag + (255 - ag) * wm))
           const cb   = Math.min(255, Math.round(ab + (255 - ab) * wm))
           ctx.shadowColor = `rgb(${cr},${cg},${cb})`
-          ctx.shadowBlur  = 2 + cf * 4   // max=6 — keeps bars visually 1px thin
+          ctx.shadowBlur  = 3 + cf * 8   // max=11 — stronger glow on thin bars
           ctx.fillStyle   = `rgb(${cr},${cg},${cb})`
           if (ctx.roundRect) {
             ctx.beginPath(); ctx.roundRect(bX, eqCY - h, eqBW, h * 2, 0.5); ctx.fill()
@@ -1897,11 +1897,11 @@ export default function RoomPage() {
         const plainText = (!hasSync && lyrSnap?.plain) ? lyrSnap.plain : null
         const hasPlain  = !!plainText && plainText.trim().length > 10
         const ly        = [90, 112, 134]        // active + next 2, 22px spacing
-        const dimLyric  = 'rgba(255,255,255,0.38)'
+        const dimLyric  = `rgba(${ar},${ag},${ab},0.6)`  // album accent, dimmed
         if (hasSync) {
           const lines     = lyrSnap.lines
           const activeIdx = lines.reduce((best, line, i) => line.time <= ct ? i : best, 0)
-          ctx.fillStyle = accentRGB; ctx.font = 'bold 13px system-ui'; ctx.textAlign = 'left'
+          ctx.fillStyle = '#ffffff'; ctx.font = 'bold 13px system-ui'; ctx.textAlign = 'left'
           ctx.fillText(truncW(lines[activeIdx].text, pW), pX, ly[0])
           for (let n = 1; n <= 2; n++) {
             if (activeIdx + n < lines.length) {
@@ -1912,7 +1912,7 @@ export default function RoomPage() {
         } else if (hasPlain) {
           const pLines = plainText.split('\n').map(l => l.trim()).filter(l => l.length > 0)
           const pIdx   = dur > 5 ? Math.min(pLines.length - 1, Math.floor((ct / dur) * pLines.length)) : 0
-          ctx.fillStyle = accentRGB; ctx.font = 'bold 13px system-ui'; ctx.textAlign = 'left'
+          ctx.fillStyle = '#ffffff'; ctx.font = 'bold 13px system-ui'; ctx.textAlign = 'left'
           ctx.fillText(truncW(pLines[pIdx] || '', pW), pX, ly[0])
           for (let n = 1; n <= 2; n++) {
             if (pLines[pIdx + n]) {
