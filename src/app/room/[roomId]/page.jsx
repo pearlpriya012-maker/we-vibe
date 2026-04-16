@@ -1631,7 +1631,7 @@ export default function RoomPage() {
         canvasPipRef.current = c
       }
       const canvas = canvasPipRef.current
-      canvas.width = 540; canvas.height = 190
+      canvas.width = 360; canvas.height = 128
       const W = canvas.width, H = canvas.height
       const ctx = canvas.getContext('2d')
 
@@ -1681,22 +1681,22 @@ export default function RoomPage() {
         const pct = dur > 0 ? Math.min(1, ct / dur) : 0
 
         // ── Left: album art (square, full height, B&W) ──
-        const artW = H // 190px square
+        const artW = H // 128px square
         if (anim.thumbImg) {
           ctx.filter = 'grayscale(70%)'
           ctx.drawImage(anim.thumbImg, 0, 0, artW, H)
           ctx.filter = 'none'
           // Soft fade into right panel
-          const fade = ctx.createLinearGradient(artW - 44, 0, artW, 0)
+          const fade = ctx.createLinearGradient(artW - 28, 0, artW, 0)
           fade.addColorStop(0, 'rgba(247,247,249,0)')
           fade.addColorStop(1, 'rgba(247,247,249,1)')
           ctx.fillStyle = fade
-          ctx.fillRect(artW - 44, 0, 44, H)
+          ctx.fillRect(artW - 28, 0, 28, H)
         } else {
           ctx.fillStyle = '#1e1e1e'
           ctx.fillRect(0, 0, artW, H)
           ctx.fillStyle = 'rgba(255,255,255,0.28)'
-          ctx.font = '52px system-ui'
+          ctx.font = '34px system-ui'
           ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
           ctx.fillText('🎵', artW / 2, H / 2)
         }
@@ -1726,13 +1726,13 @@ export default function RoomPage() {
             { idx: activeIdx,     active: true  },
             { idx: activeIdx + 1, active: false },
           ]
-          const lyYs = [22, 40, 57]
+          const lyYs = [14, 26, 38]
           slots.forEach(({ idx, active }, slot) => {
             if (idx < 0 || idx >= lines.length) return
             const raw = lines[idx].text
             const text = raw.length > 44 ? raw.slice(0, 43) + '…' : raw
             ctx.fillStyle = active ? 'rgba(0,0,0,0.86)' : 'rgba(0,0,0,0.28)'
-            ctx.font = active ? 'bold 12px system-ui' : '10.5px system-ui'
+            ctx.font = active ? 'bold 9px system-ui' : '8px system-ui'
             ctx.textAlign = 'left'
             ctx.fillText(text, rpX, lyYs[slot])
           })
@@ -1742,26 +1742,26 @@ export default function RoomPage() {
         const title = track?.title || 'Nothing playing'
         const shortTitle = title.length > 27 ? title.slice(0, 26) + '…' : title
         ctx.fillStyle = '#111111'
-        ctx.font = 'bold 17px system-ui'
+        ctx.font = 'bold 12px system-ui'
         ctx.textAlign = 'left'
-        ctx.fillText(shortTitle, rpX, 83)
+        ctx.fillText(shortTitle, rpX, 55)
 
         // ── Artist name ──
         const artist = (track?.channelTitle || '').replace(/\s*-\s*Topic$/i, '').trim()
         const shortArtist = artist.length > 26 ? artist.slice(0, 25) + '…' : artist
         ctx.fillStyle = 'rgba(0,0,0,0.42)'
-        ctx.font = '11px system-ui'
+        ctx.font = '9px system-ui'
         ctx.textAlign = 'left'
-        ctx.fillText(shortArtist, rpX, 101)
+        ctx.fillText(shortArtist, rpX, 67)
 
         // ── Progress timestamps ──
         ctx.fillStyle = 'rgba(0,0,0,0.38)'
-        ctx.font = '9px system-ui'
-        ctx.textAlign = 'left';  ctx.fillText(fmt(ct),  rpX, 122)
-        ctx.textAlign = 'right'; ctx.fillText(fmt(dur), rpR, 122)
+        ctx.font = '8px system-ui'
+        ctx.textAlign = 'left';  ctx.fillText(fmt(ct),  rpX, 81)
+        ctx.textAlign = 'right'; ctx.fillText(fmt(dur), rpR, 81)
 
         // ── Progress bar ──
-        const pbY = 127, pbH = 3
+        const pbY = 86, pbH = 2
         ctx.fillStyle = 'rgba(0,0,0,0.10)'
         if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(rpX, pbY, rpW, pbH, 2); ctx.fill() }
         else ctx.fillRect(rpX, pbY, rpW, pbH)
@@ -1772,30 +1772,30 @@ export default function RoomPage() {
         }
 
         // ── Controls row ──
-        const ctY = 163
+        const ctY = 110
         const ctCX = rX + rW / 2   // center of right panel
-        const sp = 38
+        const sp = 26
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
 
         // |◄ Prev
         ctx.fillStyle = 'rgba(0,0,0,0.62)'
-        ctx.font = '15px system-ui'
+        ctx.font = '11px system-ui'
         ctx.fillText('⏮', ctCX - sp * 2, ctY)
 
         // ► Play (outlined circle)
-        ctx.strokeStyle = 'rgba(0,0,0,0.65)'; ctx.lineWidth = 1.5
-        ctx.beginPath(); ctx.arc(ctCX - sp, ctY, 13, 0, Math.PI * 2); ctx.stroke()
+        ctx.strokeStyle = 'rgba(0,0,0,0.65)'; ctx.lineWidth = 1.2
+        ctx.beginPath(); ctx.arc(ctCX - sp, ctY, 9, 0, Math.PI * 2); ctx.stroke()
         ctx.fillStyle = 'rgba(0,0,0,0.65)'
-        ctx.font = playing ? '11px system-ui' : '10px system-ui'
+        ctx.font = playing ? '8px system-ui' : '7px system-ui'
         ctx.fillText(playing ? '⏸' : '▶', ctCX - sp + (playing ? 0 : 1), ctY)
 
         // ►| Next
         ctx.fillStyle = 'rgba(0,0,0,0.62)'
-        ctx.font = '15px system-ui'
+        ctx.font = '11px system-ui'
         ctx.fillText('⏭', ctCX, ctY)
 
         // 👎 👍
-        ctx.font = '14px system-ui'
+        ctx.font = '11px system-ui'
         ctx.fillText('👎', ctCX + sp, ctY)
         ctx.fillText('👍', ctCX + sp * 2, ctY)
       }
