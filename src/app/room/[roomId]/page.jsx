@@ -1271,11 +1271,22 @@ export default function RoomPage() {
       updatePlayback(roomId, { currentTime: details.seekTime })
     }
     navigator.mediaSession.setActionHandler('play', () => {
-      ytPlayerRef.current?.playVideo?.()
+      // Robust resume: unmute + play + iframe postMessage + retries
+      // The tab may be hidden (PiP active) so a single playVideo() call is often blocked
+      const doPlay = () => {
+        try { ytPlayerRef.current?.unMute?.(); ytPlayerRef.current?.setVolume?.(100); ytPlayerRef.current?.playVideo?.() } catch {}
+        try {
+          const iframe = document.querySelector('iframe[src*="youtube"]')
+          if (iframe?.contentWindow)
+            iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'playVideo', args: [] }), '*')
+        } catch {}
+      }
+      doPlay()
+      ;[300, 700, 1400, 2500].forEach(d => setTimeout(doPlay, d))
       updatePlayback(roomId, { isPlaying: true, currentTime: ytPlayerRef.current?.getCurrentTime?.() || 0 })
     })
     navigator.mediaSession.setActionHandler('pause', () => {
-      ytPlayerRef.current?.pauseVideo?.()
+      try { ytPlayerRef.current?.pauseVideo?.() } catch {}
       updatePlayback(roomId, { isPlaying: false, currentTime: ytPlayerRef.current?.getCurrentTime?.() || 0 })
     })
     navigator.mediaSession.setActionHandler('nexttrack', isHost ? () => skipToNext(roomId) : null)
