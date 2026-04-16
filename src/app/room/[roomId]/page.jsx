@@ -1747,6 +1747,10 @@ export default function RoomPage() {
           anim.lastTrackId = liveTrackId
           anim.skipFired = false
           if (roomRef.current?.currentTrack?.thumbnail) loadThumb(roomRef.current.currentTrack.thumbnail)
+          // Return immediately — don't check ENDED this tick. The YT player
+          // hasn't loaded the new track yet so its state is still ENDED from the
+          // previous song, which would fire skipToNext again (double-skip bug).
+          return
         }
         if (!anim.skipFired) {
           try {
@@ -1826,8 +1830,11 @@ export default function RoomPage() {
         try {
           const p = ytPlayerRef.current
           if (!p || !roomRef.current?.isPlaying) return
-          // Only retry for the video we loaded — skip if track already changed
-          if (p.getVideoData?.()?.video_id !== targetId) return
+          // Guard: stop retrying only if Firestore has moved on to a DIFFERENT track.
+          // Do NOT use p.getVideoData().video_id here — when the tab is hidden the
+          // YouTube iframe is throttled and getVideoData still returns the OLD id for
+          // several seconds after loadVideoById, causing every retry to bail early.
+          if (roomRef.current?.currentTrack?.videoId !== targetId) return
           const state = p.getPlayerState?.()
           if (state !== 1) {
             p.unMute?.(); p.setVolume?.(volume)
