@@ -2342,6 +2342,7 @@ export default function RoomPage() {
               {volumeWidget}
               {!compact && <button onClick={openMobilePip} title="Pop out mini player" style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--glass)', border: '1px solid var(--border)', cursor: 'pointer', fontSize: '0.85rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}>⧉</button>}
               {compact && <button onClick={openMobilePip} title="Mini player" style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--glass)', border: '1px solid var(--border)', cursor: 'pointer', fontSize: '0.85rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>⧉</button>}
+              {compact && <button onClick={() => setMobileTab('lyrics')} title="Lyrics" style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--glass)', border: '1px solid rgba(249,115,22,0.4)', cursor: 'pointer', fontSize: '0.85rem', color: '#f97316', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>📝</button>}
             </div>
           ) : (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
@@ -2349,6 +2350,7 @@ export default function RoomPage() {
               {volumeWidget}
               {!compact && <button onClick={openMobilePip} title="Pop out mini player" style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--glass)', border: '1px solid var(--border)', cursor: 'pointer', fontSize: '0.85rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>⧉</button>}
               {compact && <button onClick={openMobilePip} title="Mini player" style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--glass)', border: '1px solid var(--border)', cursor: 'pointer', fontSize: '0.85rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>⧉</button>}
+              {compact && <button onClick={() => setMobileTab('lyrics')} title="Lyrics" style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--glass)', border: '1px solid rgba(249,115,22,0.4)', cursor: 'pointer', fontSize: '0.85rem', color: '#f97316', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>📝</button>}
             </div>
           )}
         </div>
@@ -2840,7 +2842,7 @@ export default function RoomPage() {
         </div>
 
         {/* Center */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: videoFocus ? '12px 20px' : '20px 24px', gap: videoFocus ? 10 : 16, background: 'rgba(10,10,10,0.4)', overflow: 'hidden', minWidth: 0 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: musicMode && room?.currentTrack ? 'flex-start' : 'center', padding: musicMode && room?.currentTrack ? 0 : videoFocus ? '12px 20px' : '20px 24px', gap: videoFocus ? 10 : 16, background: 'rgba(10,10,10,0.4)', overflow: 'hidden', minWidth: 0 }}>
           {room.watchUrl ? (
             <div style={{ width: '100%', maxWidth: 800, display: 'flex', flexDirection: 'column', gap: 10 }}>
               {watchUrlEl}
@@ -2850,7 +2852,7 @@ export default function RoomPage() {
             </div>
           ) : room.currentTrack ? (
             <>
-              {musicMode && <MusicVisualizer track={room.currentTrack} isPlaying={room.isPlaying} />}
+              {/* Video mode: player + focus button */}
               {!musicMode && (
                 <div style={{ position: 'relative', width: videoFocus ? 'min(100%, calc((100vh - 270px) * 1.778))' : '100%', maxWidth: videoFocus ? undefined : 700, flexShrink: 0, borderRadius: videoFocus ? 4 : 12, overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.8)' }}>
                   {ytPlayerEl}
@@ -2859,48 +2861,103 @@ export default function RoomPage() {
                   </button>
                 </div>
               )}
-              {musicMode && ytPlayerEl}
-              <div style={{ width: '100%', maxWidth: videoFocus ? 'min(100%, calc((100vh - 270px) * 1.778))' : 500 }}>
-                <div style={{ textAlign: 'center', marginBottom: 14 }}>
-                  <div style={{ fontWeight: 600, fontSize: '1rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{room.currentTrack.title}</div>
-                  <div style={{ color: 'var(--text-dim)', fontSize: '0.875rem', marginTop: 4 }}>{room.currentTrack.channelTitle}</div>
+
+              {musicMode ? (
+                // ── Portrait music player (reference design) + scrolling lyrics ──
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', height: '100%', overflow: 'hidden', padding: '20px 24px 0' }}>
+                  {/* Hidden audio source */}
+                  <div style={{ position: 'absolute', opacity: 0, pointerEvents: 'none', width: 1, height: 1, overflow: 'hidden' }}>{ytPlayerEl}</div>
+                  {/* Album art */}
+                  <img src={room.currentTrack.thumbnail} alt="" style={{ width: 172, height: 172, borderRadius: 18, objectFit: 'cover', flexShrink: 0, boxShadow: '0 16px 48px rgba(0,0,0,0.75)', marginBottom: 16 }} />
+                  {/* Title */}
+                  <div style={{ fontWeight: 700, fontSize: '1.15rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'center', width: '100%', maxWidth: 380, marginBottom: 3 }}>{room.currentTrack.title}</div>
+                  {/* Artist */}
+                  <div style={{ color: 'var(--text-dim)', fontSize: '0.875rem', marginBottom: 14 }}>{(room.currentTrack.channelTitle || '').replace(/\s*-\s*Topic$/i, '')}</div>
+                  {/* Progress */}
+                  <div style={{ width: '100%', maxWidth: 380, marginBottom: 14, flexShrink: 0 }}>
+                    <ProgressBar currentTime={currentTime} duration={duration} isHost={isHost} canControl={canControl} onSeek={handleSeek} />
+                  </div>
+                  {/* Controls */}
+                  {canControl ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 14, justifyContent: 'center', marginBottom: 16, flexShrink: 0 }}>
+                      <button style={{ background: 'none', border: 'none', cursor: 'default', fontSize: '1.25rem', color: 'rgba(255,255,255,0.25)', padding: 4, lineHeight: 1 }}>♥</button>
+                      {canFullControl && (
+                        <button onClick={handlePreviousTrack} style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--glass)', border: '1px solid var(--border)', cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                          onMouseEnter={e => { e.currentTarget.style.borderColor = '#f97316'; e.currentTarget.style.color = '#f97316' }}
+                          onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-dim)' }}
+                        >⏮</button>
+                      )}
+                      <button onClick={handlePlayPause} style={{ width: 56, height: 56, borderRadius: '50%', background: '#f97316', border: 'none', cursor: 'pointer', fontSize: '1.3rem', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 28px rgba(249,115,22,0.55)', transition: 'transform 0.15s', flexShrink: 0 }}
+                        onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.08)'}
+                        onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+                      >{room.isPlaying ? '⏸' : '▶'}</button>
+                      <button onClick={() => skipToNext(roomId)} style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--glass)', border: '1px solid var(--border)', cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                        onMouseEnter={e => { e.currentTarget.style.borderColor = '#f97316'; e.currentTarget.style.color = '#f97316' }}
+                        onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-dim)' }}
+                      >⏭</button>
+                      <button style={{ background: 'none', border: 'none', cursor: 'default', fontSize: '1.1rem', color: 'rgba(255,255,255,0.25)', padding: 4, lineHeight: 1 }}>⇄</button>
+                      {volumeWidget}
+                      <button onClick={openMobilePip} title="Pop out mini player" style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--glass)', border: '1px solid var(--border)', cursor: 'pointer', fontSize: '0.8rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                        onMouseEnter={e => { e.currentTarget.style.borderColor = '#f97316'; e.currentTarget.style.color = '#f97316' }}
+                        onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-dim)' }}
+                      >⧉</button>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginBottom: 16, flexShrink: 0 }}>
+                      <span style={{ color: 'var(--text-dim)', fontSize: '0.8rem', fontStyle: 'italic' }}>{room.isPlaying ? '▶ Playing • Synced with host' : '⏸ Paused by host'}</span>
+                      {volumeWidget}
+                      <button onClick={openMobilePip} title="Pop out mini player" style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--glass)', border: '1px solid var(--border)', cursor: 'pointer', fontSize: '0.8rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>⧉</button>
+                    </div>
+                  )}
+                  {/* Lyrics — fills remaining height */}
+                  <div style={{ flex: 1, width: '100%', maxWidth: 400, overflow: 'hidden' }}>
+                    <LyricsPanel lines={lyrics.lines} plain={lyrics.plain} synced={lyrics.synced} loading={lyrics.loading} currentTime={currentTime} />
+                  </div>
                 </div>
-                <div style={{ marginBottom: 16 }}>
-                  <ProgressBar currentTime={currentTime} duration={duration} isHost={isHost} canControl={canControl} onSeek={handleSeek} />
-                </div>
-                {canControl ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 16, justifyContent: 'center' }}>
-                    {canFullControl && (
-                      <button onClick={handlePreviousTrack} style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--glass)', border: '1px solid var(--border)', cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+              ) : (
+                // Video mode controls
+                <div style={{ width: '100%', maxWidth: videoFocus ? 'min(100%, calc((100vh - 270px) * 1.778))' : 500 }}>
+                  <div style={{ textAlign: 'center', marginBottom: 14 }}>
+                    <div style={{ fontWeight: 600, fontSize: '1rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{room.currentTrack.title}</div>
+                    <div style={{ color: 'var(--text-dim)', fontSize: '0.875rem', marginTop: 4 }}>{room.currentTrack.channelTitle}</div>
+                  </div>
+                  <div style={{ marginBottom: 16 }}>
+                    <ProgressBar currentTime={currentTime} duration={duration} isHost={isHost} canControl={canControl} onSeek={handleSeek} />
+                  </div>
+                  {canControl ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 16, justifyContent: 'center' }}>
+                      {canFullControl && (
+                        <button onClick={handlePreviousTrack} style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--glass)', border: '1px solid var(--border)', cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                          onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--green)'; e.currentTarget.style.color = 'var(--green)' }}
+                          onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-dim)' }}
+                        >⏮</button>
+                      )}
+                      <button onClick={handlePlayPause} style={{ width: 52, height: 52, borderRadius: '50%', background: 'var(--green)', border: 'none', cursor: 'pointer', fontSize: '1.2rem', color: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 20px rgba(0,255,136,0.4)', transition: 'transform 0.15s' }}
+                        onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.1)'}
+                        onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+                      >{room.isPlaying ? '⏸' : '▶'}</button>
+                      <button onClick={() => skipToNext(roomId)} style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--glass)', border: '1px solid var(--border)', cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
                         onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--green)'; e.currentTarget.style.color = 'var(--green)' }}
                         onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-dim)' }}
-                      >⏮</button>
-                    )}
-                    <button onClick={handlePlayPause} style={{ width: 52, height: 52, borderRadius: '50%', background: 'var(--green)', border: 'none', cursor: 'pointer', fontSize: '1.2rem', color: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 20px rgba(0,255,136,0.4)', transition: 'transform 0.15s' }}
-                      onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.1)'}
-                      onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
-                    >{room.isPlaying ? '⏸' : '▶'}</button>
-                    <button onClick={() => skipToNext(roomId)} style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--glass)', border: '1px solid var(--border)', cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
-                      onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--green)'; e.currentTarget.style.color = 'var(--green)' }}
-                      onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-dim)' }}
-                    >⏭</button>
-                    {volumeWidget}
-                    <button onClick={openMobilePip} title="Pop out mini player" style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--glass)', border: '1px solid var(--border)', cursor: 'pointer', fontSize: '0.85rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
-                      onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--green)'; e.currentTarget.style.color = 'var(--green)' }}
-                      onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-dim)' }}
-                    >⧉</button>
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
-                    <span style={{ color: 'var(--text-dim)', fontSize: '0.8rem', fontStyle: 'italic' }}>{room.isPlaying ? '▶ Playing • Synced with host' : '⏸ Paused by host'}</span>
-                    {volumeWidget}
-                    <button onClick={openMobilePip} title="Pop out mini player" style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--glass)', border: '1px solid var(--border)', cursor: 'pointer', fontSize: '0.85rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
-                      onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--green)'; e.currentTarget.style.color = 'var(--green)' }}
-                      onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-dim)' }}
-                    >⧉</button>
-                  </div>
-                )}
-              </div>
+                      >⏭</button>
+                      {volumeWidget}
+                      <button onClick={openMobilePip} title="Pop out mini player" style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--glass)', border: '1px solid var(--border)', cursor: 'pointer', fontSize: '0.85rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                        onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--green)'; e.currentTarget.style.color = 'var(--green)' }}
+                        onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-dim)' }}
+                      >⧉</button>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+                      <span style={{ color: 'var(--text-dim)', fontSize: '0.8rem', fontStyle: 'italic' }}>{room.isPlaying ? '▶ Playing • Synced with host' : '⏸ Paused by host'}</span>
+                      {volumeWidget}
+                      <button onClick={openMobilePip} title="Pop out mini player" style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--glass)', border: '1px solid var(--border)', cursor: 'pointer', fontSize: '0.85rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                        onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--green)'; e.currentTarget.style.color = 'var(--green)' }}
+                        onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-dim)' }}
+                      >⧉</button>
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           ) : (
             <div style={{ textAlign: 'center', color: 'var(--text-dim)' }}>
