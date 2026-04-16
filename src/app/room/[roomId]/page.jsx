@@ -1835,6 +1835,10 @@ export default function RoomPage() {
       const video = videoPipRef.current
       const stream = canvas.captureStream(30) // 30fps for smooth animation
       video.srcObject = stream
+      // Tell Chrome the desired PiP window size — it uses the video element's
+      // width/height attributes as a size hint. Smaller values = smaller popup.
+      video.width = 240
+      video.height = 84
       await video.play()
 
       // ── Enter PiP ──
