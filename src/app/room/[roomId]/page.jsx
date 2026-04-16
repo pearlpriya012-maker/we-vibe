@@ -970,6 +970,7 @@ export default function RoomPage() {
   const canvasPipRef = useRef(null)         // hidden canvas drawn with track info for mobile PiP
   const videoPipRef = useRef(null)          // hidden <video> fed by canvas stream — requestPictureInPicture target
   const canvasPipIntervalRef = useRef(null) // interval that redraws canvas every 600ms
+  const lyricsRef = useRef(null)            // always-fresh lyrics snapshot for canvas PiP drawFrame
   // Watch URL room sync
   const watchIframeRef = useRef(null)       // ref to watch URL <iframe> (non-YT only)
   const watchYtPlayerRef = useRef(null)     // real YT.Player for watch room YouTube videos
@@ -981,6 +982,7 @@ export default function RoomPage() {
   const [watchCrop, setWatchCrop] = useState(false)
   const [ytToken, setYtToken] = useState(user?.youtubeAccessToken || null)
   const [lyrics, setLyrics] = useState({ lines: [], plain: null, synced: false, loading: false })
+  lyricsRef.current = lyrics // keep ref fresh for canvas drawFrame (avoids stale closure)
 
   const isHost = room?.hostId === user?.uid
   // canAdd = can add songs to queue
@@ -1623,21 +1625,19 @@ export default function RoomPage() {
     }
 
     try {
-      // ── Canvas setup (270×480 portrait — matches reference design) ──
+      // ── Canvas setup (540×190 landscape — split art + lyrics card) ──
       if (!canvasPipRef.current) {
         const c = document.createElement('canvas')
-        c.width = 270; c.height = 480
         canvasPipRef.current = c
       }
       const canvas = canvasPipRef.current
+      canvas.width = 540; canvas.height = 190
       const W = canvas.width, H = canvas.height
       const ctx = canvas.getContext('2d')
 
       // ── Animation state ──
       const anim = {
         frame: 0,
-        barHeights: Array.from({ length: 36 }, (_, i) => 0.06 + (i % 7) * 0.05),
-        barTargets: Array.from({ length: 36 }, () => Math.random() * 0.4),
         thumbImg: null,
         lastTrackId: null,
         skipFired: false,
@@ -1669,196 +1669,135 @@ export default function RoomPage() {
           if (track?.thumbnail) loadThumb(track.thumbnail)
         }
 
-        // ── ENDED watchdog: handled by dedicated setInterval below ──
+        ctx.clearRect(0, 0, W, H)
 
-        // ── Background: dark blue gradient ──
-        const bg = ctx.createLinearGradient(0, 0, 0, H)
-        bg.addColorStop(0, '#1c2f4a')
-        bg.addColorStop(0.5, '#152540')
-        bg.addColorStop(1, '#0c1a30')
-        ctx.fillStyle = bg
-        ctx.fillRect(0, 0, W, H)
+        // ── Current time / duration ──
+        let ct = 0, dur = 0
+        try {
+          const p = ytPlayerRef.current
+          ct = (typeof p?.getCurrentTime === 'function' ? p.getCurrentTime() : null) ?? 0
+          dur = (typeof p?.getDuration === 'function' ? p.getDuration() : null) ?? 0
+        } catch {}
+        const pct = dur > 0 ? Math.min(1, ct / dur) : 0
 
-        // Subtle noise/shimmer overlay
-        ctx.fillStyle = 'rgba(255,255,255,0.012)'
-        for (let y = 0; y < H; y += 3) {
-          const a = 0.005 + 0.01 * Math.sin(anim.frame * 0.04 + y * 0.08)
-          ctx.fillStyle = `rgba(255,255,255,${a})`
-          ctx.fillRect(0, y, W, 1)
-        }
-
-        // ── Header: "Now Playing" ──
-        ctx.textAlign = 'center'
-        ctx.textBaseline = 'middle'
-        ctx.fillStyle = 'rgba(255,255,255,0.92)'
-        ctx.font = 'bold 13px system-ui'
-        ctx.fillText('Now Playing', W / 2, 28)
-
-        // ── Album art circle ──
-        const cx = W / 2, cy = 168, r = 88
-
-        // Glow ring (pulsing when playing)
-        const pulse = 0.5 + 0.5 * Math.sin(anim.frame * 0.07)
-        if (playing) {
-          const glowR = r + 18 + pulse * 8
-          const glow = ctx.createRadialGradient(cx, cy, r, cx, cy, glowR)
-          glow.addColorStop(0, 'rgba(130, 90, 230, 0.35)')
-          glow.addColorStop(1, 'rgba(130, 90, 230, 0)')
-          ctx.fillStyle = glow
-          ctx.beginPath(); ctx.arc(cx, cy, glowR, 0, Math.PI * 2); ctx.fill()
-        }
-
-        // Frosted glass card behind circle
-        ctx.save()
-        ctx.beginPath()
-        ctx.arc(cx, cy, r + 10, 0, Math.PI * 2)
-        ctx.fillStyle = 'rgba(255,255,255,0.06)'
-        ctx.fill()
-        ctx.restore()
-
-        // Outer ring
-        ctx.beginPath(); ctx.arc(cx, cy, r + 2, 0, Math.PI * 2)
-        ctx.strokeStyle = playing ? `rgba(150,100,255,${0.5 + pulse * 0.4})` : 'rgba(255,255,255,0.12)'
-        ctx.lineWidth = 2; ctx.stroke()
-
-        // Album image clipped to circle
-        ctx.save()
-        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.clip()
+        // ── Left: album art (square, full height, B&W) ──
+        const artW = H // 190px square
         if (anim.thumbImg) {
-          ctx.drawImage(anim.thumbImg, cx - r, cy - r, r * 2, r * 2)
-          // Subtle inner vignette
-          const vig = ctx.createRadialGradient(cx, cy, r * 0.5, cx, cy, r)
-          vig.addColorStop(0, 'rgba(0,0,0,0)'); vig.addColorStop(1, 'rgba(0,0,0,0.25)')
-          ctx.fillStyle = vig; ctx.fillRect(cx - r, cy - r, r * 2, r * 2)
+          ctx.filter = 'grayscale(70%)'
+          ctx.drawImage(anim.thumbImg, 0, 0, artW, H)
+          ctx.filter = 'none'
+          // Soft fade into right panel
+          const fade = ctx.createLinearGradient(artW - 44, 0, artW, 0)
+          fade.addColorStop(0, 'rgba(247,247,249,0)')
+          fade.addColorStop(1, 'rgba(247,247,249,1)')
+          ctx.fillStyle = fade
+          ctx.fillRect(artW - 44, 0, 44, H)
         } else {
-          ctx.fillStyle = '#1a3050'; ctx.fillRect(cx - r, cy - r, r * 2, r * 2)
-          ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.font = '44px system-ui'
+          ctx.fillStyle = '#1e1e1e'
+          ctx.fillRect(0, 0, artW, H)
+          ctx.fillStyle = 'rgba(255,255,255,0.28)'
+          ctx.font = '52px system-ui'
           ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
-          ctx.fillText('🎵', cx, cy)
+          ctx.fillText('🎵', artW / 2, H / 2)
         }
-        ctx.restore()
+
+        // ── Right: light info panel ──
+        const rX = artW, rW = W - artW
+        ctx.fillStyle = '#f7f7f9'
+        ctx.fillRect(rX, 0, rW, H)
+
+        // Thin separator line
+        ctx.fillStyle = 'rgba(0,0,0,0.06)'
+        ctx.fillRect(rX, 0, 1, H)
+
+        const rpX = rX + 14        // content left
+        const rpR = W - 14         // content right
+        const rpW = rpR - rpX      // content width
+        ctx.textBaseline = 'alphabetic'
+
+        // ── Lyrics (3-line karaoke view) ──
+        const lyrSnap = lyricsRef.current
+        const hasSync = lyrSnap?.synced && lyrSnap?.lines?.length > 0
+        if (hasSync) {
+          const lines = lyrSnap.lines
+          const activeIdx = lines.reduce((best, line, i) => line.time <= ct ? i : best, 0)
+          const slots = [
+            { idx: activeIdx - 1, active: false },
+            { idx: activeIdx,     active: true  },
+            { idx: activeIdx + 1, active: false },
+          ]
+          const lyYs = [22, 40, 57]
+          slots.forEach(({ idx, active }, slot) => {
+            if (idx < 0 || idx >= lines.length) return
+            const raw = lines[idx].text
+            const text = raw.length > 44 ? raw.slice(0, 43) + '…' : raw
+            ctx.fillStyle = active ? 'rgba(0,0,0,0.86)' : 'rgba(0,0,0,0.28)'
+            ctx.font = active ? 'bold 12px system-ui' : '10.5px system-ui'
+            ctx.textAlign = 'left'
+            ctx.fillText(text, rpX, lyYs[slot])
+          })
+        }
 
         // ── Track title ──
         const title = track?.title || 'Nothing playing'
-        const shortTitle = title.length > 20 ? title.slice(0, 20) + '…' : title
-        ctx.fillStyle = '#ffffff'
-        ctx.font = 'bold 19px system-ui'
-        ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'
-        ctx.fillText(shortTitle, W / 2, 282)
+        const shortTitle = title.length > 27 ? title.slice(0, 26) + '…' : title
+        ctx.fillStyle = '#111111'
+        ctx.font = 'bold 17px system-ui'
+        ctx.textAlign = 'left'
+        ctx.fillText(shortTitle, rpX, 83)
 
         // ── Artist name ──
-        const artist = (track?.channelTitle || '').replace(/\s*-\s*Topic$/i, '')
-        const shortArtist = artist.length > 26 ? artist.slice(0, 26) + '…' : artist
-        ctx.fillStyle = 'rgba(255,255,255,0.45)'
-        ctx.font = '12px system-ui'
-        ctx.fillText(shortArtist, W / 2, 300)
+        const artist = (track?.channelTitle || '').replace(/\s*-\s*Topic$/i, '').trim()
+        const shortArtist = artist.length > 26 ? artist.slice(0, 25) + '…' : artist
+        ctx.fillStyle = 'rgba(0,0,0,0.42)'
+        ctx.font = '11px system-ui'
+        ctx.textAlign = 'left'
+        ctx.fillText(shortArtist, rpX, 101)
 
-        // ── Waveform bars (centered) ──
-        const nBars = 36, bW = 3, bGap = 3.5
-        const bTotal = nBars * (bW + bGap) - bGap
-        const bStartX = (W - bTotal) / 2
-        const wY = 328, maxH = 20
+        // ── Progress timestamps ──
+        ctx.fillStyle = 'rgba(0,0,0,0.38)'
+        ctx.font = '9px system-ui'
+        ctx.textAlign = 'left';  ctx.fillText(fmt(ct),  rpX, 122)
+        ctx.textAlign = 'right'; ctx.fillText(fmt(dur), rpR, 122)
 
-        anim.barTargets = anim.barTargets.map((t, i) => {
-          if (Math.random() < 0.09)
-            return playing ? 0.18 + Math.random() * 0.82 : 0.04 + Math.random() * 0.08
-          return t
-        })
-        anim.barHeights = anim.barHeights.map((h, i) => h + (anim.barTargets[i] - h) * 0.14)
-
-        for (let i = 0; i < nBars; i++) {
-          const bh = Math.max(2, anim.barHeights[i] * maxH)
-          const bx = bStartX + i * (bW + bGap)
-          const ratio = i / nBars
-          if (playing) {
-            const barGrad = ctx.createLinearGradient(0, wY - bh, 0, wY + bh)
-            if (ratio < 0.4) {
-              barGrad.addColorStop(0, '#7b5fe8'); barGrad.addColorStop(1, '#5b8ce8')
-            } else if (ratio < 0.7) {
-              barGrad.addColorStop(0, '#5b8ce8'); barGrad.addColorStop(1, '#3ab4f5')
-            } else {
-              barGrad.addColorStop(0, '#3ab4f5'); barGrad.addColorStop(1, '#7b5fe8')
-            }
-            ctx.fillStyle = barGrad
-          } else {
-            ctx.fillStyle = 'rgba(255,255,255,0.12)'
-          }
-          ctx.beginPath()
-          if (ctx.roundRect) ctx.roundRect(bx, wY - bh, bW, bh * 2, 2)
-          else ctx.rect(bx, wY - bh, bW, bh * 2)
-          ctx.fill()
+        // ── Progress bar ──
+        const pbY = 127, pbH = 3
+        ctx.fillStyle = 'rgba(0,0,0,0.10)'
+        if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(rpX, pbY, rpW, pbH, 2); ctx.fill() }
+        else ctx.fillRect(rpX, pbY, rpW, pbH)
+        if (pct > 0) {
+          ctx.fillStyle = '#4f9ef7'
+          if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(rpX, pbY, rpW * pct, pbH, 2); ctx.fill() }
+          else ctx.fillRect(rpX, pbY, rpW * pct, pbH)
         }
-
-        // ── Progress bar + timestamps ──
-        try {
-          const p = ytPlayerRef.current
-          const ct = (typeof p?.getCurrentTime === 'function' ? p.getCurrentTime() : null) ?? 0
-          const dur = (typeof p?.getDuration === 'function' ? p.getDuration() : null) ?? 0
-          const pct = dur > 0 ? Math.min(1, ct / dur) : 0
-          const pbX = 22, pbW = W - 44, pbY = 362, pbH = 3
-
-          // Timestamps
-          ctx.fillStyle = 'rgba(255,255,255,0.38)'
-          ctx.font = '9px system-ui'
-          ctx.textBaseline = 'alphabetic'
-          ctx.textAlign = 'left';  ctx.fillText(fmt(ct),  pbX, pbY - 5)
-          ctx.textAlign = 'right'; ctx.fillText(fmt(dur), pbX + pbW, pbY - 5)
-
-          // Track bg
-          ctx.fillStyle = 'rgba(255,255,255,0.10)'
-          if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(pbX, pbY, pbW, pbH, 2); ctx.fill() }
-          else ctx.fillRect(pbX, pbY, pbW, pbH)
-
-          if (pct > 0) {
-            const pfg = ctx.createLinearGradient(pbX, 0, pbX + pbW, 0)
-            pfg.addColorStop(0, '#7b5fe8'); pfg.addColorStop(1, '#3ab4f5')
-            ctx.fillStyle = pfg
-            if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(pbX, pbY, pbW * pct, pbH, 2); ctx.fill() }
-            else ctx.fillRect(pbX, pbY, pbW * pct, pbH)
-            // Playhead dot
-            ctx.beginPath(); ctx.arc(pbX + pbW * pct, pbY + pbH / 2, 5, 0, Math.PI * 2)
-            ctx.fillStyle = '#fff'; ctx.fill()
-          }
-        } catch {}
 
         // ── Controls row ──
-        const ctY = 420
-        // Prev button
-        ctx.fillStyle = 'rgba(255,255,255,0.10)'
-        ctx.beginPath(); ctx.arc(W / 2 - 72, ctY, 22, 0, Math.PI * 2); ctx.fill()
-        ctx.fillStyle = 'rgba(255,255,255,0.75)'
-        ctx.font = '15px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
-        ctx.fillText('⏮', W / 2 - 72, ctY + 1)
+        const ctY = 163
+        const ctCX = rX + rW / 2   // center of right panel
+        const sp = 38
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
 
-        // Play/pause button (large, purple gradient + glow)
-        if (playing) {
-          ctx.fillStyle = `rgba(120,80,220,${0.18 + pulse * 0.12})`
-          ctx.beginPath(); ctx.arc(W / 2, ctY, 42, 0, Math.PI * 2); ctx.fill()
-        }
-        const playGrad = ctx.createRadialGradient(W / 2 - 6, ctY - 6, 0, W / 2, ctY, 28)
-        playGrad.addColorStop(0, '#a57ef5')
-        playGrad.addColorStop(1, '#6535d1')
-        ctx.fillStyle = playGrad
-        ctx.beginPath(); ctx.arc(W / 2, ctY, 28, 0, Math.PI * 2); ctx.fill()
-        ctx.fillStyle = '#ffffff'
-        ctx.font = '17px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
-        ctx.fillText(playing ? '⏸' : '▶', W / 2, ctY + 1)
+        // |◄ Prev
+        ctx.fillStyle = 'rgba(0,0,0,0.62)'
+        ctx.font = '15px system-ui'
+        ctx.fillText('⏮', ctCX - sp * 2, ctY)
 
-        // Next button
-        ctx.fillStyle = 'rgba(255,255,255,0.10)'
-        ctx.beginPath(); ctx.arc(W / 2 + 72, ctY, 22, 0, Math.PI * 2); ctx.fill()
-        ctx.fillStyle = 'rgba(255,255,255,0.75)'
-        ctx.font = '15px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
-        ctx.fillText('⏭', W / 2 + 72, ctY + 1)
+        // ► Play (outlined circle)
+        ctx.strokeStyle = 'rgba(0,0,0,0.65)'; ctx.lineWidth = 1.5
+        ctx.beginPath(); ctx.arc(ctCX - sp, ctY, 13, 0, Math.PI * 2); ctx.stroke()
+        ctx.fillStyle = 'rgba(0,0,0,0.65)'
+        ctx.font = playing ? '11px system-ui' : '10px system-ui'
+        ctx.fillText(playing ? '⏸' : '▶', ctCX - sp + (playing ? 0 : 1), ctY)
 
-        // ── Bottom row: shuffle · Lyrics · repeat ──
-        ctx.font = '13px system-ui'; ctx.textBaseline = 'middle'
-        ctx.fillStyle = 'rgba(255,255,255,0.30)'
-        ctx.textAlign = 'left';   ctx.fillText('⇄', 26, 460)
-        ctx.textAlign = 'right';  ctx.fillText('↺', W - 26, 460)
-        ctx.fillStyle = 'rgba(255,255,255,0.45)'
-        ctx.font = '11px system-ui'; ctx.textAlign = 'center'
-        ctx.fillText('Lyrics', W / 2, 460)
+        // ►| Next
+        ctx.fillStyle = 'rgba(0,0,0,0.62)'
+        ctx.font = '15px system-ui'
+        ctx.fillText('⏭', ctCX, ctY)
+
+        // 👎 👍
+        ctx.font = '14px system-ui'
+        ctx.fillText('👎', ctCX + sp, ctY)
+        ctx.fillText('👍', ctCX + sp * 2, ctY)
       }
 
       // ── Animation loop ──
