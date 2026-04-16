@@ -1625,15 +1625,13 @@ export default function RoomPage() {
     }
 
     try {
-      // ── Canvas setup (540×190 landscape — split art + lyrics card) ──
+      // ── Canvas setup: 360×110 — canvas px = PiP window size, no DPR scaling ──
       if (!canvasPipRef.current) {
         const c = document.createElement('canvas')
         canvasPipRef.current = c
       }
       const canvas = canvasPipRef.current
-      // Physical canvas dimensions = PiP popup dimensions on screen
-      // Keep this small — Chrome's min PiP size is ~160px wide
-      const W = 200, H = 70
+      const W = 360, H = 110
       canvas.width = W; canvas.height = H
       const ctx = canvas.getContext('2d')
 
@@ -1662,17 +1660,30 @@ export default function RoomPage() {
         anim.frame++
         const liveRoom = roomRef.current
         const track = liveRoom?.currentTrack
+        const playing = liveRoom?.isPlaying
 
         if (track?.videoId !== anim.lastTrackId) {
           anim.lastTrackId = track?.videoId || null
           anim.thumbImg = null
           anim.skipFired = false
           if (track?.thumbnail) loadThumb(track.thumbnail)
+          // Sync MediaSession metadata
+          if ('mediaSession' in navigator && track) {
+            try {
+              navigator.mediaSession.metadata = new MediaMetadata({
+                title: track.title || 'We Vibe',
+                artist: (track.channelTitle || '').replace(/\s*-\s*Topic$/i, '').trim(),
+              })
+            } catch {}
+          }
         }
 
-        // Reset transform each frame so scale doesn't accumulate
+        // Keep MediaSession playback state in sync
+        if ('mediaSession' in navigator) {
+          try { navigator.mediaSession.playbackState = playing ? 'playing' : 'paused' } catch {}
+        }
+
         ctx.setTransform(1, 0, 0, 1, 0, 0)
-        ctx.clearRect(0, 0, W, H)
 
         // ── Current time / duration ──
         let ct = 0, dur = 0
@@ -1683,95 +1694,114 @@ export default function RoomPage() {
         } catch {}
         const pct = dur > 0 ? Math.min(1, ct / dur) : 0
 
-        // ── Left: album art (square, full height, B&W) ──
-        const artW = H // 70px square
-        if (anim.thumbImg) {
-          ctx.filter = 'grayscale(70%)'
-          ctx.drawImage(anim.thumbImg, 0, 0, artW, H)
-          ctx.filter = 'none'
-          // Soft fade into right panel
-          const fade = ctx.createLinearGradient(artW - 18, 0, artW, 0)
-          fade.addColorStop(0, 'rgba(247,247,249,0)')
-          fade.addColorStop(1, 'rgba(247,247,249,1)')
-          ctx.fillStyle = fade
-          ctx.fillRect(artW - 18, 0, 18, H)
-        } else {
-          ctx.fillStyle = '#1e1e1e'
-          ctx.fillRect(0, 0, artW, H)
-          ctx.fillStyle = 'rgba(255,255,255,0.28)'
-          ctx.font = '26px system-ui'
-          ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
-          ctx.fillText('🎵', artW / 2, H / 2)
-        }
+        // ── Background: dark gradient ──
+        const bg = ctx.createLinearGradient(0, 0, 0, H)
+        bg.addColorStop(0, '#0e0e16')
+        bg.addColorStop(1, '#1a1020')
+        ctx.fillStyle = bg
+        ctx.fillRect(0, 0, W, H)
 
-        // ── Right: light info panel ──
-        const rX = artW, rW = W - artW
-        ctx.fillStyle = '#f7f7f9'
-        ctx.fillRect(rX, 0, rW, H)
+        // Orange top accent strip
+        ctx.fillStyle = '#f97316'
+        ctx.fillRect(0, 0, W, 2)
 
-        // Thin separator line
-        ctx.fillStyle = 'rgba(0,0,0,0.06)'
-        ctx.fillRect(rX, 0, 1, H)
+        // ── Play/Pause indicator circle (left) ──
+        const btnX = 30, btnY = Math.floor(H / 2) - 4
+        ctx.strokeStyle = playing ? '#f97316' : 'rgba(255,255,255,0.3)'
+        ctx.lineWidth = 1.5
+        ctx.beginPath(); ctx.arc(btnX, btnY, 18, 0, Math.PI * 2); ctx.stroke()
+        ctx.fillStyle = playing ? '#f97316' : 'rgba(255,255,255,0.65)'
+        ctx.font = '14px system-ui'
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+        ctx.fillText(playing ? '⏸' : '▶', btnX + (playing ? 0 : 1), btnY)
 
-        const rpX = rX + 7        // content left
-        const rpR = W - 7         // content right
-        const rpW = rpR - rpX      // content width
+        // ── Right content area ──
+        const cX = 58, cR = W - 12, cW = cR - cX
         ctx.textBaseline = 'alphabetic'
 
-        // ── Lyrics (3-line karaoke view) ──
+        // Title
+        const title = track?.title || 'Nothing playing'
+        const shortTitle = title.length > 36 ? title.slice(0, 35) + '…' : title
+        ctx.fillStyle = '#ffffff'
+        ctx.font = 'bold 12px system-ui'
+        ctx.textAlign = 'left'
+        ctx.fillText(shortTitle, cX, 22)
+
+        // Artist
+        const artist = (track?.channelTitle || '').replace(/\s*-\s*Topic$/i, '').trim()
+        const shortArtist = artist.length > 50 ? artist.slice(0, 49) + '…' : artist
+        ctx.fillStyle = 'rgba(255,255,255,0.45)'
+        ctx.font = '9px system-ui'
+        ctx.fillText(shortArtist, cX, 34)
+
+        // Active lyric (single line, orange)
         const lyrSnap = lyricsRef.current
         const hasSync = lyrSnap?.synced && lyrSnap?.lines?.length > 0
         if (hasSync) {
           const lines = lyrSnap.lines
           const activeIdx = lines.reduce((best, line, i) => line.time <= ct ? i : best, 0)
-          const slots = [
-            { idx: activeIdx - 1, active: false },
-            { idx: activeIdx,     active: true  },
-            { idx: activeIdx + 1, active: false },
-          ]
-          const lyYs = [8, 16, 24]
-          slots.forEach(({ idx, active }, slot) => {
-            if (idx < 0 || idx >= lines.length) return
-            const raw = lines[idx].text
-            const text = raw.length > 44 ? raw.slice(0, 43) + '…' : raw
-            ctx.fillStyle = active ? 'rgba(0,0,0,0.88)' : 'rgba(0,0,0,0.3)'
-            ctx.font = active ? 'bold 7px system-ui' : '6px system-ui'
-            ctx.textAlign = 'left'
-            ctx.fillText(text, rpX, lyYs[slot])
-          })
+          const lyric = lines[activeIdx]?.text || ''
+          const shortLyric = lyric.length > 52 ? lyric.slice(0, 51) + '…' : lyric
+          ctx.fillStyle = '#f97316'
+          ctx.font = 'bold 9px system-ui'
+          ctx.fillText(shortLyric, cX, 49)
         }
 
-        // ── Track title ──
-        const title = track?.title || 'Nothing playing'
-        const shortTitle = title.length > 27 ? title.slice(0, 26) + '…' : title
-        ctx.fillStyle = '#111111'
-        ctx.font = 'bold 9px system-ui'
-        ctx.textAlign = 'left'
-        ctx.fillText(shortTitle, rpX, 33)
+        // ── Wavy animated progress bar ──
+        const waveY = 68, amp = 4, wfreq = 0.10
+        const wphase = (anim.frame * 0.08) % (Math.PI * 2)
 
-        // ── Artist name ──
-        const artist = (track?.channelTitle || '').replace(/\s*-\s*Topic$/i, '').trim()
-        const shortArtist = artist.length > 26 ? artist.slice(0, 25) + '…' : artist
-        ctx.fillStyle = 'rgba(0,0,0,0.42)'
-        ctx.font = '7px system-ui'
-        ctx.textAlign = 'left'
-        ctx.fillText(shortArtist, rpX, 42)
+        // Dim background wave
+        ctx.beginPath()
+        for (let x = 0; x <= cW; x++) {
+          const wy = waveY + Math.sin(x * wfreq + wphase) * amp
+          if (x === 0) ctx.moveTo(cX + x, wy)
+          else ctx.lineTo(cX + x, wy)
+        }
+        ctx.strokeStyle = 'rgba(255,255,255,0.12)'
+        ctx.lineWidth = 1.5
+        ctx.lineJoin = 'round'
+        ctx.stroke()
 
-        // ── Progress timestamps ──
-        ctx.fillStyle = 'rgba(0,0,0,0.38)'
-        ctx.font = '6px system-ui'
-        ctx.textAlign = 'left';  ctx.fillText(fmt(ct),  rpX, 52)
-        ctx.textAlign = 'right'; ctx.fillText(fmt(dur), rpR, 52)
-
-        // ── Progress bar ──
-        const pbY = 57, pbH = 2
-        ctx.fillStyle = 'rgba(0,0,0,0.10)'
-        if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(rpX, pbY, rpW, pbH, 2); ctx.fill() }
-        else ctx.fillRect(rpX, pbY, rpW, pbH)
+        // Orange filled wave clipped to progress
         if (pct > 0) {
-          ctx.fillStyle = '#4f9ef7'
-          if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(rpX, pbY, rpW * pct, pbH, 2); ctx.fill() }
-          else ctx.fillRect(rpX, pbY, rpW * pct, pbH)
+          const fillW = cW * pct
+          ctx.save()
+          ctx.beginPath()
+          ctx.rect(cX, waveY - amp - 3, fillW, (amp + 3) * 2)
+          ctx.clip()
+          ctx.beginPath()
+          for (let x = 0; x <= cW; x++) {
+            const wy = waveY + Math.sin(x * wfreq + wphase) * amp
+            if (x === 0) ctx.moveTo(cX + x, wy)
+            else ctx.lineTo(cX + x, wy)
+          }
+          ctx.strokeStyle = '#f97316'
+          ctx.lineWidth = 2.5
+          ctx.lineJoin = 'round'
+          ctx.stroke()
+          ctx.restore()
+
+          // Playhead dot riding the wave
+          const dotX = cX + cW * pct
+          const dotY = waveY + Math.sin(cW * pct * wfreq + wphase) * amp
+          ctx.beginPath(); ctx.arc(dotX, dotY, 3.5, 0, Math.PI * 2)
+          ctx.fillStyle = '#fb923c'; ctx.fill()
+          ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 1; ctx.stroke()
+        }
+
+        // Timestamps
+        ctx.fillStyle = 'rgba(255,255,255,0.32)'
+        ctx.font = '8px system-ui'
+        ctx.textAlign = 'left';  ctx.fillText(fmt(ct),  cX, 88)
+        ctx.textAlign = 'right'; ctx.fillText(fmt(dur), cR, 88)
+
+        // Pulsing live dot top-right
+        if (playing) {
+          const pulse = 0.5 + 0.5 * Math.sin(anim.frame * 0.15)
+          ctx.beginPath(); ctx.arc(W - 9, 9, 3, 0, Math.PI * 2)
+          ctx.fillStyle = `rgba(249,115,22,${(0.5 + pulse * 0.5).toFixed(2)})`
+          ctx.fill()
         }
       }
 
@@ -1841,6 +1871,24 @@ export default function RoomPage() {
       // ── Enter PiP ──
       await video.requestPictureInPicture()
 
+      // ── Media Session: wire play/pause/next to YT player ──
+      // Chrome shows these as overlay buttons in the PiP window
+      if ('mediaSession' in navigator) {
+        try {
+          navigator.mediaSession.setActionHandler('play', () => {
+            try { ytPlayerRef.current?.unMute?.(); ytPlayerRef.current?.playVideo?.() } catch {}
+          })
+          navigator.mediaSession.setActionHandler('pause', () => {
+            try { ytPlayerRef.current?.pauseVideo?.() } catch {}
+          })
+          navigator.mediaSession.setActionHandler('nexttrack', () => {
+            try {
+              if (roomRef.current?.hostId === user?.uid) skipToNext(roomId).catch?.(() => {})
+            } catch {}
+          })
+        } catch {}
+      }
+
       // Cancel static interval from before — animation now runs via rAF
       clearInterval(canvasPipIntervalRef.current)
       // Store cancel fn in the ref so leavepictureinpicture can clean up
@@ -1850,6 +1898,13 @@ export default function RoomPage() {
           clearInterval(watchdogInterval)
           clearInterval(audioKeepalive)
           document.removeEventListener('visibilitychange', onVisibilityChange)
+          try {
+            if ('mediaSession' in navigator) {
+              navigator.mediaSession.setActionHandler('play', null)
+              navigator.mediaSession.setActionHandler('pause', null)
+              navigator.mediaSession.setActionHandler('nexttrack', null)
+            }
+          } catch {}
         }
       }
 
