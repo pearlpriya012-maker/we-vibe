@@ -1772,11 +1772,17 @@ export default function RoomPage() {
         ctx.fillRect(0, 0, W, H)
 
         // ─────────────────────────────────────────────────────
-        // Layout: [album + eq bars] → title → timebar → lyrics
+        // Layout: [album + eq bars] → title → divider → lyrics
         // pX=10 left pad, pR=390 right pad
         // ─────────────────────────────────────────────────────
         const pX = 10, pR = W - 10, pW = pR - pX
-        const truncLyric = (s, max) => s.length > max ? s.slice(0, max - 1) + '…' : s
+        // Width-based truncation — never cuts mid-word before canvas edge
+        const truncLyric = (s, maxW) => {
+          if (ctx.measureText(s).width <= maxW) return s
+          let t = s
+          while (t.length > 1 && ctx.measureText(t + '…').width > maxW) t = t.slice(0, -1)
+          return t + '…'
+        }
         ctx.textBaseline = 'alphabetic'
 
         // ── ROW 1 (top): Album art (left) + Neon equalizer bars (right) ──
@@ -1814,12 +1820,12 @@ export default function RoomPage() {
           ctx.textBaseline = 'alphabetic'
         }
 
-        // Equalizer bars: 1px wide, 1px gap, shorter height
+        // Equalizer bars: 1px wide, 2px gap, album-accent color synced
         const eqCY    = sqY + sqSize / 2   // vertical center = 25
-        const eqMaxH  = 13                 // max half-height (shorter bars)
+        const eqMaxH  = 13                 // max half-height
         const now_s   = Date.now() * 0.001
         const eqBW    = 1                  // 1px ultra-thin
-        const eqGap   = 1
+        const eqGap   = 2                  // wider gap → bars look even finer
         const eqCount = Math.floor((eqW + eqGap) / (eqBW + eqGap))
 
         for (let i = 0; i < eqCount; i++) {
@@ -1832,29 +1838,18 @@ export default function RoomPage() {
           const h    = Math.max(1, eqMaxH * env * Math.min(1, Math.max(0, rawH)))
           const bX   = eqX + i * (eqBW + eqGap)
 
-          const distFromCenter = Math.abs(t - 0.5) * 2
-          let cr, cg, cb, glowColor, glowBlur
-          if (distFromCenter < 0.15) {
-            cr = 210; cg = 230; cb = 255; glowBlur = 12; glowColor = '#a0c4ff'
-          } else if (t < 0.35) {
-            const m = t / 0.35
-            cr = Math.round(30+m*60); cg = Math.round(80+m*80); cb = 255
-            glowBlur = 7; glowColor = `rgb(${cr},${cg},${cb})`
-          } else if (t < 0.5) {
-            const m = (t - 0.35) / 0.15
-            cr = Math.round(90+m*80); cg = Math.round(160-m*80); cb = 255
-            glowBlur = 8; glowColor = `rgb(${cr},${cg},${cb})`
-          } else if (t < 0.65) {
-            const m = (t - 0.5) / 0.15
-            cr = Math.round(170-m*100); cg = Math.round(80+m*100); cb = 255
-            glowBlur = 8; glowColor = `rgb(${cr},${cg},${cb})`
-          } else {
-            const m = (t - 0.65) / 0.35
-            cr = Math.round(70-m*40); cg = Math.round(180+m*60); cb = Math.round(255-m*55)
-            glowBlur = 7; glowColor = `rgb(${cr},${cg},${cb})`
-          }
-          ctx.shadowColor = glowColor; ctx.shadowBlur = glowBlur
-          ctx.fillStyle = `rgb(${cr},${cg},${cb})`
+          // Album-accent-synced color: center bars brighten toward white, edges stay accent
+          const distFromCenter = Math.abs(t - 0.5) * 2   // 0=center, 1=edges
+          const centerFactor   = 1 - distFromCenter        // 1=center, 0=edges
+          const whiteMix = centerFactor * 0.55
+          const cr = Math.min(255, Math.round(ar + (255 - ar) * whiteMix))
+          const cg = Math.min(255, Math.round(ag + (255 - ag) * whiteMix))
+          const cb = Math.min(255, Math.round(ab + (255 - ab) * whiteMix))
+          const glowBlur = 5 + centerFactor * 9      // 5 at edges, 14 at center
+
+          ctx.shadowColor = `rgb(${cr},${cg},${cb})`
+          ctx.shadowBlur  = glowBlur
+          ctx.fillStyle   = `rgb(${cr},${cg},${cb})`
           if (ctx.roundRect) {
             ctx.beginPath(); ctx.roundRect(bX, eqCY - h, eqBW, h * 2, 0.5); ctx.fill()
           } else {
@@ -1868,75 +1863,65 @@ export default function RoomPage() {
         const artist = (track?.channelTitle || '').replace(/\s*-\s*Topic$/i, '').trim()
         ctx.fillStyle = '#ffffff'
         ctx.font = 'bold 11px system-ui'; ctx.textAlign = 'left'
-        ctx.fillText(truncLyric(title, 54), pX, 57)
-        ctx.fillStyle = 'rgba(255,255,255,0.45)'
+        ctx.fillText(truncLyric(title, pW), pX, 57)
+        ctx.fillStyle = 'rgba(255,255,255,0.50)'
         ctx.font = '9px system-ui'
-        ctx.fillText(truncLyric(artist, 60), pX, 68)
-
-        // ── ROW 3: Progress / time bar (full width) ──
-        const pgY = 77
-        ctx.strokeStyle = `rgba(${ar},${ag},${ab},0.18)`
-        ctx.lineWidth = 1.5
-        ctx.beginPath(); ctx.moveTo(pX, pgY); ctx.lineTo(pR, pgY); ctx.stroke()
-        if (pct > 0) {
-          ctx.shadowColor = accentRGB; ctx.shadowBlur = 5
-          ctx.strokeStyle = accentRGB; ctx.lineWidth = 1.5
-          ctx.beginPath(); ctx.moveTo(pX, pgY); ctx.lineTo(pX + pct * pW, pgY); ctx.stroke()
-          ctx.shadowBlur = 0; ctx.shadowColor = 'transparent'
-          ctx.beginPath(); ctx.arc(pX + pct * pW, pgY, 2.5, 0, Math.PI * 2)
-          ctx.fillStyle = '#ffffff'; ctx.fill()
-        }
-        if (dur > 0) {
-          ctx.fillStyle = 'rgba(255,255,255,0.32)'; ctx.font = '7px system-ui'
-          ctx.textAlign = 'left';  ctx.fillText(fmt(ct),  pX, pgY + 10)
-          ctx.textAlign = 'right'; ctx.fillText(fmt(dur), pR, pgY + 10)
-        }
+        ctx.fillText(truncLyric(artist, pW), pX, 68)
 
         // ── Divider ──
-        ctx.fillStyle = `rgba(${ar},${ag},${ab},0.25)`
-        ctx.fillRect(pX, 93, pW, 1)
+        ctx.fillStyle = `rgba(${ar},${ag},${ab},0.30)`
+        ctx.fillRect(pX, 74, pW, 1)
 
-        // ── ROW 4: Lyrics (prev / ACTIVE / next) ──
+        // ── ROW 3: Lyrics — 4 lines (1 prev + active + 2 next) ──
         const lyrSnap   = lyricsRef.current
         const hasSync   = lyrSnap?.synced && lyrSnap?.lines?.length > 0
         const plainText = (!hasSync && lyrSnap?.plain) ? lyrSnap.plain : null
         const hasPlain  = !!plainText && plainText.trim().length > 10
+        // y positions: 86, 101, 116, 131  (15px line spacing)
+        const ly = [86, 101, 116, 131]
         if (hasSync) {
           const lines     = lyrSnap.lines
           const activeIdx = lines.reduce((best, line, i) => line.time <= ct ? i : best, 0)
+          // prev line
           if (activeIdx > 0) {
-            ctx.fillStyle = 'rgba(255,255,255,0.3)'
+            ctx.fillStyle = 'rgba(255,255,255,0.65)'
             ctx.font = '10px system-ui'; ctx.textAlign = 'left'
-            ctx.fillText(truncLyric(lines[activeIdx - 1].text, 54), pX, 107)
+            ctx.fillText(truncLyric(lines[activeIdx - 1].text, pW), pX, ly[0])
           }
+          // active line
           ctx.fillStyle = accentRGB
           ctx.font = 'bold 12px system-ui'; ctx.textAlign = 'left'
-          ctx.fillText(truncLyric(lines[activeIdx].text, 50), pX, 123)
-          if (activeIdx + 1 < lines.length) {
-            ctx.fillStyle = 'rgba(255,255,255,0.3)'
-            ctx.font = '10px system-ui'; ctx.textAlign = 'left'
-            ctx.fillText(truncLyric(lines[activeIdx + 1].text, 54), pX, 138)
+          ctx.fillText(truncLyric(lines[activeIdx].text, pW), pX, ly[1])
+          // next 2 lines
+          for (let n = 1; n <= 2; n++) {
+            if (activeIdx + n < lines.length) {
+              ctx.fillStyle = 'rgba(255,255,255,0.65)'
+              ctx.font = '10px system-ui'; ctx.textAlign = 'left'
+              ctx.fillText(truncLyric(lines[activeIdx + n].text, pW), pX, ly[1 + n])
+            }
           }
         } else if (hasPlain) {
           const pLines = plainText.split('\n').map(l => l.trim()).filter(l => l.length > 0)
           const pIdx   = dur > 5 ? Math.min(pLines.length - 1, Math.floor((ct / dur) * pLines.length)) : 0
           if (pIdx > 0 && pLines[pIdx - 1]) {
-            ctx.fillStyle = 'rgba(255,255,255,0.3)'
+            ctx.fillStyle = 'rgba(255,255,255,0.65)'
             ctx.font = '10px system-ui'; ctx.textAlign = 'left'
-            ctx.fillText(truncLyric(pLines[pIdx - 1], 54), pX, 107)
+            ctx.fillText(truncLyric(pLines[pIdx - 1], pW), pX, ly[0])
           }
           ctx.fillStyle = accentRGB
           ctx.font = 'bold 12px system-ui'; ctx.textAlign = 'left'
-          ctx.fillText(truncLyric(pLines[pIdx] || '', 50), pX, 123)
-          if (pLines[pIdx + 1]) {
-            ctx.fillStyle = 'rgba(255,255,255,0.3)'
-            ctx.font = '10px system-ui'; ctx.textAlign = 'left'
-            ctx.fillText(truncLyric(pLines[pIdx + 1], 54), pX, 138)
+          ctx.fillText(truncLyric(pLines[pIdx] || '', pW), pX, ly[1])
+          for (let n = 1; n <= 2; n++) {
+            if (pLines[pIdx + n]) {
+              ctx.fillStyle = 'rgba(255,255,255,0.65)'
+              ctx.font = '10px system-ui'; ctx.textAlign = 'left'
+              ctx.fillText(truncLyric(pLines[pIdx + n], pW), pX, ly[1 + n])
+            }
           }
         } else {
-          ctx.fillStyle = 'rgba(255,255,255,0.35)'
+          ctx.fillStyle = 'rgba(255,255,255,0.40)'
           ctx.font = '10px system-ui'; ctx.textAlign = 'left'
-          ctx.fillText('No lyrics available', pX, 123)
+          ctx.fillText('No lyrics available', pX, ly[1])
         }
 
         // ── Playing indicator — pulsing dot top-right ──
