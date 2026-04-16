@@ -1849,45 +1849,65 @@ export default function RoomPage() {
         ctx.font = '9.5px system-ui'
         ctx.fillText(truncLyric(artist, 34), cX, 97)
 
-        // ── Wave-line visualizer (flowing glowing strands, like reference) ──
-        const waveY    = 125   // center Y of wave zone
-        const waveHalf = 22    // max amplitude
-        const strandCount = 7  // layered wave lines
-        const phase = (anim.frame * 0.045) % (Math.PI * 2)
+        // ── Wave-line visualizer — traveling strands, matches reference ──
+        // Use wall-clock time so waves ALWAYS travel even if rAF briefly stalls
+        const now_s = Date.now() * 0.001
+        const waveY    = 125
+        const waveHalf = 20
+
+        // 8 strands: index 0/7 = outermost, 3/4 = innermost (center)
+        // Each pair mirrors vertically — strands sit both above AND below axis
+        const strands = [
+          // [ampFraction, freqCycles, travelSpeed, lineW, isBright]
+          [0.95, 2.2, 2.1,  1.1, false],  // outer 1
+          [0.80, 2.4, 1.85, 1.3, false],  // outer 2
+          [0.60, 2.6, 1.6,  1.5, false],  // mid
+          [0.38, 2.8, 1.35, 1.8, true ],  // inner — bright
+          [0.38, 2.8, 1.35, 1.8, true ],  // inner — bright (mirror)
+          [0.60, 2.6, 1.6,  1.5, false],  // mid mirror
+          [0.80, 2.4, 1.85, 1.3, false],  // outer 2 mirror
+          [0.95, 2.2, 2.1,  1.1, false],  // outer 1 mirror
+        ]
+        // Mirror flag: bottom half of array draws with opposite Y sign
+        const mirrorSign = [1, 1, 1, 1, -1, -1, -1, -1]
 
         ctx.save()
-        ctx.beginPath(); ctx.rect(cX, waveY - waveHalf - 6, cW, (waveHalf + 6) * 2); ctx.clip()
+        ctx.beginPath(); ctx.rect(cX, waveY - waveHalf - 8, cW, (waveHalf + 8) * 2); ctx.clip()
 
-        for (let s = 0; s < strandCount; s++) {
-          const sNorm   = s / (strandCount - 1)        // 0..1
-          const center  = Math.abs(sNorm - 0.5) * 2    // 0=center strand, 1=outermost
-          const ampScale = Math.max(0.18, 1 - center * 0.72)
-          const phShift  = phase + s * 0.52
+        for (let s = 0; s < strands.length; s++) {
+          const [amp, freq, speed, lw, bright] = strands[s]
+          const sign = mirrorSign[s]
+          const travelPhase = now_s * speed
+          // Outer strands get a unique phase offset so they don't all overlap
+          const phOffset = s * 0.38
 
           ctx.beginPath()
-          const pts = 90
+          const pts = 100
           for (let p = 0; p <= pts; p++) {
-            const t = p / pts
-            const x = cX + t * cW
-            // taper to zero at both ends, peaks in the middle
-            const xEnv = Math.pow(Math.sin(t * Math.PI), 0.6)
-            const y = waveY + ampScale * waveHalf * xEnv * (
-              0.55 * Math.sin(t * Math.PI * 3.1 + phShift) +
-              0.28 * Math.sin(t * Math.PI * 7.3 + phShift * 1.45) +
-              0.17 * Math.sin(t * Math.PI * 14  + phShift * 0.68)
-            )
+            const u = p / pts
+            const x  = cX + u * cW
+            // Taper amplitude to zero at both edges — mountain envelope
+            const env = Math.pow(Math.sin(u * Math.PI), 0.7)
+            // TRAVELING wave: sin(position - time) moves left→right
+            const y = waveY + sign * amp * waveHalf * env *
+              Math.sin(u * freq * Math.PI * 2 - travelPhase + phOffset)
             p === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
           }
 
-          // Center strand = bright white core, outer = accent color dimming out
-          const isCoreStrand = center < 0.3
-          const alpha = isCoreStrand ? 0.9 : Math.max(0.08, 0.65 - center * 0.6)
-          ctx.lineWidth   = isCoreStrand ? 1.9 : 1.2
-          ctx.strokeStyle = isCoreStrand
-            ? `rgba(255,255,255,${alpha.toFixed(2)})`
-            : `rgba(${ar},${ag},${ab},${alpha.toFixed(2)})`
-          ctx.shadowColor = isCoreStrand ? '#ffffff' : accentRGB
-          ctx.shadowBlur  = isCoreStrand ? 12 : 6
+          if (bright) {
+            ctx.lineWidth   = lw + 0.8
+            ctx.strokeStyle = 'rgba(255,255,255,0.92)'
+            ctx.shadowColor = '#ffffff'
+            ctx.shadowBlur  = 14
+          } else {
+            // Outer strands fade: outermost (s=0,7) are dimmest
+            const distFromBright = Math.min(s, strands.length - 1 - s)  // 0..3
+            const alpha = Math.max(0.12, 0.72 - (3 - distFromBright) * 0.18)
+            ctx.lineWidth   = lw
+            ctx.strokeStyle = `rgba(${ar},${ag},${ab},${alpha.toFixed(2)})`
+            ctx.shadowColor = accentRGB
+            ctx.shadowBlur  = 6
+          }
           ctx.stroke()
         }
         ctx.restore()
@@ -1933,7 +1953,8 @@ export default function RoomPage() {
       // running even while the tab is hidden, so songs auto-advance in PiP.
       let rafId = null
       function loop() {
-        drawFrame()
+        // Guard: if drawFrame throws, keep the loop alive so waves never freeze
+        try { drawFrame() } catch (e) { console.warn('[PiP] drawFrame error:', e) }
         rafId = requestAnimationFrame(loop)
       }
       rafId = requestAnimationFrame(loop)
