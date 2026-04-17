@@ -1222,8 +1222,10 @@ export default function RoomPage() {
   function handleWatchPlayerReady(e) {
     watchYtPlayerRef.current = e.target
     const r = roomRef.current
-    const t = r?.watchCurrentTime || 0
-    if (t > 1) e.target.seekTo(t, true)
+    // Latency-compensate so late joiners start at the right position
+    const elapsed = (Date.now() - (r?.watchUpdatedAt || Date.now())) / 1000
+    const t = Math.max(0, (r?.watchCurrentTime || 0) + (r?.watchIsPlaying ? elapsed : 0))
+    if (t > 0.5) e.target.seekTo(t, true)
     if (r?.watchIsPlaying) e.target.playVideo()
     else e.target.pauseVideo()
   }
@@ -1237,8 +1239,10 @@ export default function RoomPage() {
     if (room.watchIsPlaying) {
       if (isNewUpdate) {
         const elapsed = (Date.now() - room.watchUpdatedAt) / 1000
-        const seekTo = Math.max(0, (room.watchCurrentTime || 0) + elapsed)
-        watchSeek(seekTo)
+        const targetTime = Math.max(0, (room.watchCurrentTime || 0) + elapsed)
+        const guestTime = watchGetTime()
+        // Only seek if drifting >1s — prevents jitter on every heartbeat
+        if (Math.abs(guestTime - targetTime) > 1.0) watchSeek(targetTime)
       }
       watchPlay()
     } else {
@@ -1246,6 +1250,22 @@ export default function RoomPage() {
       if (isNewUpdate) watchSeek(room.watchCurrentTime || 0)
     }
   }, [room?.watchIsPlaying, room?.watchUpdatedAt, room?.watchUrl])
+
+  // ─── Watch URL: continuous guest drift correction every 3s ───
+  useEffect(() => {
+    if (!room?.watchUrl || isHost || !room.watchIsPlaying) return
+    const iv = setInterval(() => {
+      try {
+        const r = roomRef.current
+        if (!r?.watchUpdatedAt || !r.watchIsPlaying) return
+        const elapsed = (Date.now() - r.watchUpdatedAt) / 1000
+        const targetTime = Math.max(0, (r.watchCurrentTime || 0) + elapsed)
+        const guestTime = watchGetTime()
+        if (Math.abs(guestTime - targetTime) > 1.0) watchSeek(targetTime)
+      } catch {}
+    }, 3000)
+    return () => clearInterval(iv)
+  }, [isHost, room?.watchUrl, room?.watchIsPlaying])
 
   // ─── Poll real player time every 500ms → drives UI + watchTimeRef ───
   useEffect(() => {
@@ -1259,17 +1279,18 @@ export default function RoomPage() {
     return () => clearInterval(iv)
   }, [room?.watchUrl])
 
-  // ─── Host: save current time to Firestore every 5s so guests can resume on reload ───
+  // ─── Host: push current time every 2s so guests can continuously re-sync ───
   useEffect(() => {
-    if (!room?.watchUrl || !isHost) return
+    if (!room?.watchUrl || !isHost || !room.watchIsPlaying) return
     const iv = setInterval(() => {
       if (watchYtPlayerRef.current?.getCurrentTime) {
         const t = watchYtPlayerRef.current.getCurrentTime()
-        updateWatchPlayback(roomId, { watchCurrentTime: t }).catch(() => {})
+        // Include watchUpdatedAt so guests' isNewUpdate fires and they can drift-correct
+        updateWatchPlayback(roomId, { watchCurrentTime: t, watchUpdatedAt: Date.now() }).catch(() => {})
       }
-    }, 5000)
+    }, 2000)
     return () => clearInterval(iv)
-  }, [room?.watchUrl, isHost, roomId])
+  }, [room?.watchUrl, isHost, room?.watchIsPlaying, roomId])
 
   // ─── Broadcast this user's watch time for People panel ───
   useEffect(() => {
