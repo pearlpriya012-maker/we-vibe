@@ -1582,7 +1582,7 @@ export default function RoomPage() {
       const canvas = document.createElement('canvas')
       canvasPipRef.current = canvas
       const withLyrics = pipLyricsRef.current
-      const W = withLyrics ? 300 : 72, H = 72
+      const W = withLyrics ? 200 : 48, H = withLyrics ? 52 : 48
       canvas.width = W; canvas.height = H
       const ctx = canvas.getContext('2d')
 
@@ -1684,37 +1684,37 @@ export default function RoomPage() {
         }
 
         if (!withLyrics) {
-          // ── 72×72: album art + tiny title + pulse dot ──
-          const sz = 58, ax = (W-sz)/2, ay = 4
+          // ── 48×48: album art square, progress sliver, pulse dot ──
+          const sz = 40, ax = (W-sz)/2, ay = 3
           drawThumb(ax, ay, sz)
-          const g = ctx.createLinearGradient(0, 42, 0, H)
-          g.addColorStop(0,'rgba(0,0,0,0)'); g.addColorStop(1,'rgba(0,0,0,0.88)')
-          ctx.fillStyle = g; ctx.fillRect(0, 42, W, H-42)
-          ctx.font = 'bold 7px system-ui'; ctx.textAlign = 'center'; ctx.fillStyle = '#fff'
-          ctx.fillText(trunc(track?.title||'♫', W-6), W/2, 68)
-          // progress sliver at very bottom
+          const g = ctx.createLinearGradient(0, 32, 0, H)
+          g.addColorStop(0,'rgba(0,0,0,0)'); g.addColorStop(1,'rgba(0,0,0,0.85)')
+          ctx.fillStyle = g; ctx.fillRect(0, 32, W, H-32)
+          ctx.font = 'bold 6px system-ui'; ctx.textAlign = 'center'; ctx.fillStyle = '#fff'
+          ctx.fillText(trunc(track?.title||'♫', W-4), W/2, 46)
+          // progress sliver
           ctx.fillStyle = 'rgba(255,255,255,0.1)'; ctx.fillRect(0, H-2, W, 2)
           ctx.fillStyle = accentRGB; ctx.fillRect(0, H-2, W*pct, 2)
           // pulse dot
           if (playing) {
             const p2 = 0.5 + 0.5*Math.sin(anim.frame*0.15)
-            ctx.shadowColor = accentRGB; ctx.shadowBlur = 4
-            ctx.beginPath(); ctx.arc(W-6, 6, 2.5, 0, Math.PI*2)
+            ctx.shadowColor = accentRGB; ctx.shadowBlur = 3
+            ctx.beginPath(); ctx.arc(W-5, 5, 2, 0, Math.PI*2)
             ctx.fillStyle = `rgba(${ar},${ag},${ab},${p2.toFixed(2)})`; ctx.fill()
             ctx.shadowBlur = 0; ctx.shadowColor = 'transparent'
           }
         } else {
-          // ── 300×72: 64×64 album art left + info right ──
-          const sz = 64, sqX = 4, sqY = 4
+          // ── 200×52: 44×44 album art left + info right ──
+          const sz = 44, sqX = 3, sqY = 4
           drawThumb(sqX, sqY, sz)
-          const txX = sqX + sz + 7, txW = W - txX - 5
+          const txX = sqX + sz + 5, txW = W - txX - 4
           const title = track?.title || 'Nothing playing'
           const artist = (track?.channelTitle||'').replace(/\s*-\s*Topic$/i,'').trim()
           ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left'
-          ctx.font = 'bold 10px system-ui'; ctx.fillStyle = '#fff'
-          ctx.fillText(trunc(title, txW), txX, 16)
-          ctx.font = '8px system-ui'; ctx.fillStyle = 'rgba(255,255,255,0.5)'
-          ctx.fillText(trunc(artist, txW), txX, 27)
+          ctx.font = 'bold 8px system-ui'; ctx.fillStyle = '#fff'
+          ctx.fillText(trunc(title, txW), txX, 13)
+          ctx.font = '7px system-ui'; ctx.fillStyle = 'rgba(255,255,255,0.5)'
+          ctx.fillText(trunc(artist, txW), txX, 23)
           // Lyrics line
           const lyrSnap = lyricsRef.current
           const hasSync = lyrSnap?.synced && lyrSnap?.lines?.length > 0
@@ -1722,29 +1722,27 @@ export default function RoomPage() {
           if (hasSync) {
             const lines = lyrSnap.lines
             const ai = lines.reduce((best,l,i) => l.time <= ct ? i : best, 0)
-            ctx.font = 'bold 10px system-ui'; ctx.fillStyle = accentRGB
-            ctx.fillText(trunc(lines[ai].text, txW), txX, 42)
-            if (lines[ai+1]) { ctx.font = '8px system-ui'; ctx.fillStyle = `rgba(${ar},${ag},${ab},0.6)`; ctx.fillText(trunc(lines[ai+1].text, txW), txX, 54) }
+            ctx.font = 'bold 8px system-ui'; ctx.fillStyle = accentRGB
+            ctx.fillText(trunc(lines[ai].text, txW), txX, 34)
+            if (lines[ai+1]) { ctx.font = '7px system-ui'; ctx.fillStyle = `rgba(${ar},${ag},${ab},0.6)`; ctx.fillText(trunc(lines[ai+1].text, txW), txX, 44) }
           } else if (plainText?.trim().length > 4) {
             const pl = plainText.split('\n').map(l=>l.trim()).filter(l=>l)
             const pi = dur > 5 ? Math.min(pl.length-1, Math.floor((ct/dur)*pl.length)) : 0
-            ctx.font = 'bold 10px system-ui'; ctx.fillStyle = accentRGB
-            ctx.fillText(trunc(pl[pi]||'', txW), txX, 42)
-            if (pl[pi+1]) { ctx.font = '8px system-ui'; ctx.fillStyle = `rgba(${ar},${ag},${ab},0.6)`; ctx.fillText(trunc(pl[pi+1], txW), txX, 54) }
+            ctx.font = 'bold 8px system-ui'; ctx.fillStyle = accentRGB
+            ctx.fillText(trunc(pl[pi]||'', txW), txX, 34)
+            if (pl[pi+1]) { ctx.font = '7px system-ui'; ctx.fillStyle = `rgba(${ar},${ag},${ab},0.6)`; ctx.fillText(trunc(pl[pi+1], txW), txX, 44) }
           } else {
-            ctx.font = '8px system-ui'; ctx.fillStyle = 'rgba(255,255,255,0.25)'
-            ctx.fillText('No lyrics', txX, 42)
+            ctx.font = '7px system-ui'; ctx.fillStyle = 'rgba(255,255,255,0.25)'
+            ctx.fillText('No lyrics', txX, 34)
           }
-          // time + progress bar
-          ctx.font = '7px system-ui'; ctx.fillStyle = 'rgba(255,255,255,0.3)'
-          ctx.fillText(fmt(ct), txX, 66); ctx.textAlign = 'right'; ctx.fillText(fmt(dur), W-4, 66); ctx.textAlign = 'left'
+          // progress bar only (no time text — too small)
           ctx.fillStyle = 'rgba(255,255,255,0.1)'; ctx.fillRect(0, H-2, W, 2)
           ctx.fillStyle = accentRGB; ctx.fillRect(0, H-2, W*pct, 2)
           // pulse dot
           if (playing) {
             const p2 = 0.5 + 0.5*Math.sin(anim.frame*0.15)
-            ctx.shadowColor = accentRGB; ctx.shadowBlur = 4
-            ctx.beginPath(); ctx.arc(W-6, 6, 2.5, 0, Math.PI*2)
+            ctx.shadowColor = accentRGB; ctx.shadowBlur = 3
+            ctx.beginPath(); ctx.arc(W-5, 5, 2, 0, Math.PI*2)
             ctx.fillStyle = `rgba(${ar},${ag},${ab},${p2.toFixed(2)})`; ctx.fill()
             ctx.shadowBlur = 0; ctx.shadowColor = 'transparent'
           }
