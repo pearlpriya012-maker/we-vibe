@@ -1,6 +1,6 @@
 'use client'
 // src/app/auth/login/page.jsx
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
@@ -13,6 +13,13 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [googleLoading, setGoogleLoading] = useState(false)
   const [resetMode, setResetMode] = useState(false)
+  const [redirectTo, setRedirectTo] = useState('/dashboard')
+
+  // Read optional ?redirect= param set by /join/[code] when user isn't logged in
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search).get('redirect')
+    if (p) setRedirectTo(p)
+  }, [])
 
   const handleChange = (e) => setForm((f) => ({ ...f, [e.target.name]: e.target.value }))
 
@@ -32,7 +39,7 @@ export default function LoginPage() {
     try {
       await login(form.email, form.password)
       toast.success('Welcome back! 🎵')
-      router.push('/dashboard')
+      router.push(redirectTo)
     } catch (err) {
       toast.error('Invalid email or password')
     } finally {
@@ -45,7 +52,7 @@ export default function LoginPage() {
     try {
       await loginWithGoogle()
       toast.success('Welcome back! 🎵')
-      router.push('/dashboard')
+      router.push(redirectTo)
     } catch {
       toast.error('Google sign-in failed')
     } finally {

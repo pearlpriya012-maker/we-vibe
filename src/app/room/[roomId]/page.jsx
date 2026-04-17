@@ -950,6 +950,7 @@ export default function RoomPage() {
   const [rightTab, setRightTab] = useState('chat')
   const [loading, setLoading] = useState(true)
   const [copied, setCopied] = useState(false)
+  const [copiedLink, setCopiedLink] = useState(false)
   const [musicMode, setMusicMode] = useState(true)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
@@ -2396,8 +2397,16 @@ export default function RoomPage() {
   function copyCode() {
     navigator.clipboard.writeText(room.roomCode)
     setCopied(true)
-    toast.success('Copied!')
+    toast.success('Room code copied!')
     setTimeout(() => setCopied(false), 2000)
+  }
+
+  function copyLink() {
+    const link = `${window.location.origin}/join/${room.roomCode}`
+    navigator.clipboard.writeText(link)
+    setCopiedLink(true)
+    toast.success('Invite link copied!')
+    setTimeout(() => setCopiedLink(false), 2000)
   }
 
   function handleVolumeChange(val) {
@@ -2637,6 +2646,7 @@ export default function RoomPage() {
             <button onClick={copyCode} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(0,255,136,0.08)', border: '1px solid rgba(0,255,136,0.25)', borderRadius: 8, padding: '6px 10px', cursor: 'pointer', fontFamily: 'Oswald', letterSpacing: '0.1em', color: 'var(--green)', fontSize: '0.75rem' }}>
               {copied ? '✅' : '📋'} {room.roomCode}
             </button>
+            <button onClick={copyLink} title="Copy invite link" style={{ width: 30, height: 30, borderRadius: 8, background: 'rgba(0,255,136,0.06)', border: '1px solid rgba(0,255,136,0.2)', cursor: 'pointer', fontSize: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{copiedLink ? '✅' : '🔗'}</button>
             <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'rgba(0,255,136,0.06)', border: '1px solid rgba(0,255,136,0.2)', borderRadius: 8, padding: '4px 8px' }}>
               <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--green)', boxShadow: '0 0 6px var(--green)', display: 'inline-block' }} />
               <span style={{ fontFamily: 'Oswald', fontSize: '0.7rem', color: 'var(--green)' }}>{room.participants?.length || 0}</span>
@@ -2761,6 +2771,7 @@ export default function RoomPage() {
             <button onClick={copyCode} style={{ background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.2)', borderRadius: 8, padding: '5px 10px', cursor: 'pointer', fontFamily: 'Oswald', color: 'var(--cyan)', fontSize: '0.7rem' }}>
               {copied ? '✅' : '📋'} {room.roomCode}
             </button>
+            <button onClick={copyLink} title="Copy invite link" style={{ width: 30, height: 30, borderRadius: 8, background: 'rgba(0,200,255,0.06)', border: '1px solid rgba(0,200,255,0.15)', cursor: 'pointer', fontSize: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{copiedLink ? '✅' : '🔗'}</button>
             <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'rgba(0,200,255,0.06)', border: '1px solid rgba(0,200,255,0.2)', borderRadius: 8, padding: '4px 8px' }}>
               <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--cyan)', boxShadow: '0 0 6px var(--cyan)', display: 'inline-block' }} />
               <span style={{ fontFamily: 'Oswald', fontSize: '0.7rem', color: 'var(--cyan)' }}>{room.participants?.length || 0}</span>
@@ -2945,6 +2956,7 @@ export default function RoomPage() {
           {/* Right badge cluster */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
             <button onClick={copyCode} style={{ background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.2)', borderRadius: 8, padding: '5px 10px', cursor: 'pointer', fontFamily: 'Oswald', color: 'var(--cyan)', fontSize: '0.7rem' }}>{copied ? '✅' : '📋'} {room.roomCode}</button>
+            <button onClick={copyLink} title="Copy invite link" style={{ width: 30, height: 30, borderRadius: 8, background: 'rgba(0,200,255,0.06)', border: '1px solid rgba(0,200,255,0.15)', cursor: 'pointer', fontSize: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{copiedLink ? '✅' : '🔗'}</button>
             <div className="badge badge-green" style={{ fontSize: '0.7rem' }}><span className="pulse-dot" style={{ width: 6, height: 6 }} />{room.participants?.length || 0} vibing</div>
             {isHost && <div className="badge" style={{ background: 'rgba(243,156,18,0.1)', border: '1px solid rgba(243,156,18,0.3)', color: '#f39c12', fontSize: '0.7rem' }}>⭐ HOST</div>}
             <button onClick={handleLeave} className="btn-danger" style={{ padding: '5px 12px', fontSize: '0.78rem' }}>Leave</button>
@@ -3083,6 +3095,7 @@ export default function RoomPage() {
           <button onClick={copyCode} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(0,255,136,0.08)', border: '1px solid rgba(0,255,136,0.25)', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontFamily: 'Oswald', letterSpacing: '0.12em', color: 'var(--green)', fontSize: '0.85rem' }}>
             {copied ? '✅' : '📋'} {room.roomCode}
           </button>
+          <button onClick={copyLink} title="Copy invite link" style={{ width: 34, height: 34, borderRadius: 8, background: 'rgba(0,255,136,0.06)', border: '1px solid rgba(0,255,136,0.2)', cursor: 'pointer', fontSize: '0.95rem', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{copiedLink ? '✅' : '🔗'}</button>
           <div className="badge badge-green"><span className="pulse-dot" style={{ width: 6, height: 6 }} />{room.participants?.length || 0} vibing</div>
           {isHost && <div className="badge" style={{ background: 'rgba(243,156,18,0.1)', border: '1px solid rgba(243,156,18,0.3)', color: '#f39c12' }}>⭐ HOST</div>}
           <button onClick={handleLeave} className="btn-danger" style={{ padding: '7px 14px', fontSize: '0.8rem' }}>Leave</button>
