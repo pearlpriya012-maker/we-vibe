@@ -2380,7 +2380,6 @@ export default function RoomPage() {
   }
 
   const [showLyrics, setShowLyrics] = useState(true)
-  const miniPlayerCanvasRef = useRef(null)
 
   if (loading) return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 16 }}>
@@ -2930,16 +2929,47 @@ export default function RoomPage() {
       </div>
     </div>
     <MiniPlayerOverlay
-      renderContent={(w, h) => (
-        <>
-          <canvas ref={miniPlayerCanvasRef} width={w} height={h} style={{ width: w, height: h, display: 'block' }} />
-          <button onClick={() => setShowLyrics(v => !v)} style={{ position: 'absolute', top: 8, right: 8, zIndex: 10, background: '#222', color: '#fff', border: 'none', borderRadius: 16, padding: '4px 12px', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
-            {showLyrics ? 'Hide Lyrics' : 'Show Lyrics'}
-          </button>
-        </>
-      )}
-      defaultW={showLyrics ? 400 : 88}
-      defaultH={88}
+      renderContent={(w, h) => {
+        const track = room?.currentTrack
+        const isPlaying = room?.isPlaying
+        const pct = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0
+        const fmt = s => { if (!s || !isFinite(s)) return '0:00'; return `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}` }
+        const activeLyric = showLyrics && lyrics?.lines?.length > 0
+          ? [...lyrics.lines].reverse().find(l => currentTime >= (l.time ?? 0))?.text
+          : null
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%', padding: '8px 10px', gap: 4, overflow: 'hidden' }}>
+            {/* Track row */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
+              {track?.thumbnail && <img src={track.thumbnail} alt="" style={{ width: 44, height: 44, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }} />}
+              {!track?.thumbnail && <div style={{ width: 44, height: 44, borderRadius: 6, background: '#1a1a1a', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>🎵</div>}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{track?.title || 'Nothing playing'}</div>
+                <div style={{ fontSize: 11, color: '#888', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{track?.channelTitle || ''}</div>
+                {activeLyric && <div style={{ fontSize: 11, color: '#00ff88', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 1 }}>{activeLyric}</div>}
+              </div>
+              {/* Controls */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                {canFullControl && <button onClick={() => handlePreviousTrack()} style={{ background: 'none', border: 'none', color: '#aaa', fontSize: 16, cursor: 'pointer', padding: '4px 2px' }}>⏮</button>}
+                {canControl && <button onClick={() => handlePlayPause()} style={{ background: '#00ff88', border: 'none', borderRadius: '50%', width: 34, height: 34, color: '#000', fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{isPlaying ? '⏸' : '▶'}</button>}
+                {canControl && <button onClick={() => skipToNext(roomId)} style={{ background: 'none', border: 'none', color: '#aaa', fontSize: 16, cursor: 'pointer', padding: '4px 2px' }}>⏭</button>}
+                <button onClick={() => setShowLyrics(v => !v)} title={showLyrics ? 'Hide lyrics' : 'Show lyrics'} style={{ background: 'none', border: 'none', color: showLyrics ? '#00ff88' : '#555', fontSize: 16, cursor: 'pointer', padding: '4px 2px' }}>🎤</button>
+              </div>
+            </div>
+            {/* Progress bar */}
+            <div style={{ width: '100%' }}>
+              <div style={{ width: '100%', height: 3, background: 'rgba(255,255,255,0.1)', borderRadius: 2, position: 'relative' }}>
+                <div style={{ position: 'absolute', top: 0, left: 0, height: '100%', width: `${pct}%`, background: 'linear-gradient(90deg,#00ff88,#00e5ff)', borderRadius: 2 }} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#555', marginTop: 2 }}>
+                <span>{fmt(currentTime)}</span><span>{fmt(duration)}</span>
+              </div>
+            </div>
+          </div>
+        )
+      }}
+      defaultW={320}
+      defaultH={100}
     />
     </>
   )
