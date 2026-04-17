@@ -1723,7 +1723,39 @@ export default function RoomPage() {
 
     // ── Watchdog: auto-advance tracks when tab is hidden ──
     let watchdogInterval = null
+    let watchdogMsgCleanup = null
+
+    function doSkip() {
+      if (anim.skipFired) return
+      anim.skipFired = true
+      if (Date.now() - lastSkipAtRef.current < 4000) return
+      lastSkipAtRef.current = Date.now()
+      if (roomRef.current?.hostId === user?.uid) skipToNext(roomId).catch(()=>{})
+      else import('firebase/firestore').then(({updateDoc,doc})=>import('@/lib/firebase').then(({db})=>updateDoc(doc(db,'rooms',roomId),{skipRequested:Date.now()}).catch(()=>{})))
+    }
+
     function startWatchdog() {
+      // ── Primary: YouTube postMessage events ──────────────────────────────
+      // YouTube iframes communicate via window.postMessage. These events fire
+      // immediately even when the tab is throttled/backgrounded, making them
+      // far more reliable than setInterval for detecting ENDED state in PiP.
+      function onYtMsg(ev) {
+        try {
+          const data = typeof ev.data === 'string' ? JSON.parse(ev.data) : null
+          if (!data) return
+          // Track change: reset skipFired so next ENDED triggers a fresh skip
+          if (data.event === 'onStateChange' && data.info === 1 /* PLAYING */) {
+            anim.skipFired = false
+          }
+          // Video ended (info: 0)
+          if (data.event === 'onStateChange' && data.info === 0) doSkip()
+        } catch {}
+      }
+      window.addEventListener('message', onYtMsg)
+      watchdogMsgCleanup = () => window.removeEventListener('message', onYtMsg)
+
+      // ── Secondary: polling fallback for browsers where postMessage may be ──
+      // delayed or for the video-PiP fallback path.
       watchdogInterval = setInterval(() => {
         const liveId = roomRef.current?.currentTrack?.videoId || null
         if (liveId !== anim.lastTrackId) {
@@ -1731,18 +1763,10 @@ export default function RoomPage() {
           if (roomRef.current?.currentTrack?.thumbnail) loadThumb(roomRef.current.currentTrack.thumbnail)
           return
         }
-        if (!anim.skipFired) {
-          try {
-            const ytS = window.YT?.PlayerState, st = ytPlayerRef.current?.getPlayerState?.()
-            if (ytS && st === ytS.ENDED) {
-              anim.skipFired = true
-              if (Date.now() - lastSkipAtRef.current < 4000) return
-              lastSkipAtRef.current = Date.now()
-              if (roomRef.current?.hostId === user?.uid) skipToNext(roomId).catch(()=>{})
-              else import('firebase/firestore').then(({updateDoc,doc})=>import('@/lib/firebase').then(({db})=>updateDoc(doc(db,'rooms',roomId),{skipRequested:Date.now()}).catch(()=>{})))
-            }
-          } catch {}
-        }
+        try {
+          const ytS = window.YT?.PlayerState, st = ytPlayerRef.current?.getPlayerState?.()
+          if (ytS && st === ytS.ENDED) doSkip()
+        } catch {}
       }, 1000)
     }
 
@@ -1939,7 +1963,7 @@ export default function RoomPage() {
         canvasPipIntervalRef.current = {
           cancel: () => {
             try { if (rafId) pipWin.cancelAnimationFrame?.(rafId) } catch {}
-            clearInterval(watchdogInterval); teardownMediaSession()
+            clearInterval(watchdogInterval); watchdogMsgCleanup?.(); teardownMediaSession()
           }
         }
         pipWin.addEventListener('pagehide', () => { canvasPipIntervalRef.current?.cancel?.() }, { once: true })
@@ -1977,7 +2001,7 @@ export default function RoomPage() {
       video.style.width = `${W}px`; video.style.height = `${H}px`
       await video.play()
       await video.requestPictureInPicture()
-      canvasPipIntervalRef.current = { cancel: () => { if(rafId)cancelAnimationFrame(rafId); clearInterval(watchdogInterval); teardownMediaSession() } }
+      canvasPipIntervalRef.current = { cancel: () => { if(rafId)cancelAnimationFrame(rafId); clearInterval(watchdogInterval); watchdogMsgCleanup?.(); teardownMediaSession() } }
       video.addEventListener('leavepictureinpicture', () => { canvasPipIntervalRef.current?.cancel?.() }, { once: true })
       toast.success('PiP opened — floats over other apps')
     } catch { toast.error('Could not open Picture-in-Picture') }
