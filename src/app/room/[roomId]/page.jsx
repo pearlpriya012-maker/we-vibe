@@ -12,6 +12,8 @@ import {
   sendMessage, addReaction, toggleParticipantQueueAccess, toggleParticipantFullControl,
   kickParticipant, updateMusicMode, updateWatchPlayback, updateParticipantWatchTime,
 } from '@/lib/rooms'
+import dynamic from 'next/dynamic'
+const MiniPlayerOverlay = dynamic(() => import('@/components/MiniPlayerOverlay'), { ssr: false })
 
 function Avatar({ user, size = 32 }) {
   if (user?.photoURL) return <img src={user.photoURL} alt="" style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--border)', flexShrink: 0 }} />
@@ -385,7 +387,7 @@ function SearchAndQueue({ room, isHost, canAdd, onAddToQueue, onPlayNow, onRemov
       {tab === 'playlists' ? (
         <PlaylistPanel onAddToQueue={onAddToQueue} canAdd={canAdd} ytAccessToken={ytAccessToken} onStartPlaylist={onStartPlaylist} onShufflePlaylist={onShufflePlaylist} onTokenExpired={onTokenExpired} cachedPlaylists={fetchedPlaylistsRef.current} onPlaylistsLoaded={data => { fetchedPlaylistsRef.current = data }} />
       ) : tab === 'aibond' ? (
-        <AIBondPanel room={room} canAdd={canAdd} onAddToQueue={onAddToQueue} ytAccessToken={ytAccessToken} />
+        <AIBondPanel room={room} canAdd={canAdd} onAddToQueue={handleAddToQueue} ytAccessToken={ytAccessToken} />
       ) : tab === 'queue' ? (
         /* ── Queue Tab ── */
         <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
@@ -986,7 +988,7 @@ export default function RoomPage() {
   const canvasPipRef = useRef(null)         // hidden canvas drawn with track info for mobile PiP
   const videoPipRef = useRef(null)          // hidden <video> fed by canvas stream — requestPictureInPicture target
   const canvasPipIntervalRef = useRef(null) // interval that redraws canvas every 600ms
-  const lyricsRef = useRef(null)            // always-fresh lyrics snapshot for canvas PiP drawFrame
+  const lyricsRef = useRef(null)            // always-fresh lyrics snapshot for canvas drawFrame
   // Watch URL room sync
   const watchIframeRef = useRef(null)       // ref to watch URL <iframe> (non-YT only)
   const watchYtPlayerRef = useRef(null)     // real YT.Player for watch room YouTube videos
@@ -1626,8 +1628,7 @@ export default function RoomPage() {
 
       function fmt(s) {
         if (!s || !isFinite(s)) return '0:00'
-        const m = Math.floor(s / 60)
-        return `${m}:${String(Math.floor(s % 60)).padStart(2, '0')}`
+        return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
       }
 
       // ── Sync loop — updates pip DOM 2× per second ──
@@ -1663,7 +1664,7 @@ export default function RoomPage() {
           const p = ytPlayerRef.current
           const ct = (typeof p?.getCurrentTime === 'function' ? p.getCurrentTime() : null) ?? 0
           const dur = (typeof p?.getDuration === 'function' ? p.getDuration() : null) ?? 0
-          const pct = dur > 0 ? Math.min(100, (ct / dur) * 100) : 0
+          const pct = dur > 0 ? Math.min(1, ct / dur) : 0
           d.getElementById('progress-fill').style.width = `${pct}%`
           d.getElementById('t-cur').textContent = fmt(ct)
           d.getElementById('t-dur').textContent = fmt(dur)
@@ -2235,12 +2236,8 @@ export default function RoomPage() {
           p.unMute?.(); p.setVolume?.(100)
           try {
             const iframe = document.querySelector('iframe[src*="youtube"]')
-            if (iframe?.contentWindow) {
-              iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'unMute',     args: [] }), '*')
-              iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'setVolume', args: [100] }), '*')
-              if (state !== 1)
-                iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'playVideo', args: [] }), '*')
-            }
+            if (iframe?.contentWindow)
+              iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'playVideo', args: [] }), '*')
           } catch {}
           if (state !== 1) p.playVideo?.()
         } catch {}
@@ -2292,10 +2289,9 @@ export default function RoomPage() {
       try { e.target.unMute?.(); e.target.setVolume?.(volume) } catch {}
       try {
         const iframe = document.querySelector('iframe[src*="youtube"]')
-        if (iframe?.contentWindow) {
+        if (iframe?.contentWindow)
           iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'unMute',     args: [] }), '*')
-          iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'setVolume', args: [100] }), '*')
-        }
+        iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'setVolume', args: [100] }), '*')
       } catch {}
     }
     // Use roomRef for a live isHost check — the closed-over `isHost` can be stale
@@ -2443,7 +2439,13 @@ export default function RoomPage() {
     await setCurrentTrack(roomId, track)
     const { updateDoc, doc } = await import('firebase/firestore')
     const { db } = await import('@/lib/firebase')
-    await updateDoc(doc(db, 'rooms', roomId), { queue: newQueue })
+    await updateDoc(doc(db, 'rooms', roomId), {
+      currentTrack: track,
+      queue: newQueue,
+      playedHistory: room.playedHistory || [],
+      currentTime: 0,
+      isPlaying: true,
+    })
   }
 
   async function handlePreviousTrack() {
@@ -2498,6 +2500,17 @@ export default function RoomPage() {
       setMuted(true)
       try { ytPlayerRef.current?.setVolume?.(0); ytPlayerRef.current?.mute?.() } catch {}
     }
+  }
+
+  const [miniPlayerOpen, setMiniPlayerOpen] = useState(false)
+  const miniPlayerCanvasRef = useRef(null)
+
+  // Render PiP canvas content into the overlay
+  function renderMiniPlayerContent(w, h) {
+    // Reuse the PiP canvas drawing logic
+    // We'll create a canvas and run the same drawFrame logic as PiP
+    // (for brevity, you can refactor drawFrame into a shared util if needed)
+    return <canvas ref={miniPlayerCanvasRef} width={w} height={h} style={{ width: w, height: h, display: 'block' }} />
   }
 
   if (loading) return (
@@ -2710,7 +2723,7 @@ export default function RoomPage() {
             <div style={{ fontFamily: 'Oswald', fontSize: '0.68rem', color: 'var(--cyan)', letterSpacing: '0.08em' }}>📺 WATCH ROOM</div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <button onClick={copyCode} style={{ background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.3)', borderRadius: 8, padding: '5px 10px', cursor: 'pointer', fontFamily: 'Oswald', color: 'var(--cyan)', fontSize: '0.7rem' }}>
+            <button onClick={copyCode} style={{ background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.2)', borderRadius: 8, padding: '5px 10px', cursor: 'pointer', fontFamily: 'Oswald', color: 'var(--cyan)', fontSize: '0.7rem' }}>
               {copied ? '✅' : '📋'} {room.roomCode}
             </button>
             <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'rgba(0,200,255,0.06)', border: '1px solid rgba(0,200,255,0.2)', borderRadius: 8, padding: '4px 8px' }}>
@@ -2749,6 +2762,9 @@ export default function RoomPage() {
               style={{ flex: 1, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(0,200,255,0.2)', borderRadius: 8, padding: '6px 10px', color: '#fff', fontSize: '0.75rem', fontFamily: 'inherit', outline: 'none', minWidth: 0 }}
             />
             <button type="submit" style={{ flexShrink: 0, background: 'var(--cyan)', border: 'none', borderRadius: 8, padding: '6px 12px', color: '#000', fontFamily: 'Oswald', fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer', letterSpacing: '0.06em' }}>GO</button>
+            {!isYt && (
+              <button type="button" onClick={() => setWatchCrop(c => !c)} title="Crop to video only" style={{ flexShrink: 0, background: watchCrop ? 'rgba(0,200,255,0.15)' : 'rgba(255,255,255,0.05)', border: `1px solid ${watchCrop ? 'rgba(0,200,255,0.4)' : 'rgba(255,255,255,0.15)'}`, borderRadius: 8, padding: '8px 12px', color: watchCrop ? 'var(--cyan)' : 'var(--text-dim)', cursor: 'pointer', fontSize: '0.8rem' }}>✂️ {watchCrop ? 'Cropped' : 'Crop'}</button>
+            )}
           </form>
         )}
 
@@ -2768,7 +2784,7 @@ export default function RoomPage() {
               src={`/api/proxy?url=${encodeURIComponent(room.watchUrl)}`}
               allow="autoplay; fullscreen; picture-in-picture"
               allowFullScreen
-              style={{ position: 'absolute', top: watchCrop ? -65 : 0, left: 0, width: '100%', height: watchCrop ? 'calc(100% + 65px)' : '100%', border: 'none' }}
+              style={{ position: 'absolute', top: watchCrop ? -65 : 0, left: 0, width: '100%', height: watchCrop ? 'calc(100% + 65px)' : '100%', border: 'none', display: 'block' }}
               title="Watch together"
             />
           )}
@@ -2776,7 +2792,7 @@ export default function RoomPage() {
 
         {/* Sync Controls */}
         {isYt && (
-          <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', background: 'rgba(13,13,13,0.95)', borderBottom: '1px solid rgba(0,200,255,0.15)' }}>
+          <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', background: 'rgba(13,13,13,0.95)', borderTop: '1px solid rgba(0,200,255,0.15)' }}>
             {canControl ? (
               <>
                 <button
@@ -2787,6 +2803,8 @@ export default function RoomPage() {
                     updateWatchPlayback(roomId, { watchIsPlaying: nowPlaying, watchCurrentTime: t, watchUpdatedAt: Date.now() })
                   }}
                   style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--cyan)', border: 'none', cursor: 'pointer', fontSize: '1rem', color: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 0 14px rgba(0,200,255,0.4)' }}
+                  onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.1)'}
+                  onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
                 >{room.watchIsPlaying ? '⏸' : '▶'}</button>
                 <span style={{ fontFamily: 'Oswald', fontSize: '0.72rem', color: 'var(--cyan)', flexShrink: 0, minWidth: 36 }}>{fmtTime(watchTime)}</span>
                 <input type="range" min="0" max="7200" value={watchTime}
@@ -2795,12 +2813,13 @@ export default function RoomPage() {
                   onTouchEnd={e => { watchSeek(+e.target.value); updateWatchPlayback(roomId, { watchCurrentTime: +e.target.value, watchUpdatedAt: Date.now() }) }}
                   style={{ flex: 1, accentColor: 'var(--cyan)', cursor: 'pointer' }}
                 />
+                <span style={{ fontFamily: 'Oswald', fontSize: '0.65rem', color: 'var(--text-dim)', flexShrink: 0 }}>{isHost ? '⭐ HOST CONTROLS' : '🛡️ IN SYNC'}</span>
               </>
             ) : (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
-                <span style={{ fontSize: '0.9rem' }}>{room.watchIsPlaying ? '▶' : '⏸'}</span>
-                <span style={{ fontFamily: 'Oswald', fontSize: '0.68rem', color: 'var(--text-dim)' }}>{room.watchIsPlaying ? 'Playing' : 'Paused by host'} · {fmtTime(watchTime)}</span>
-                <span style={{ marginLeft: 'auto', fontFamily: 'Oswald', fontSize: '0.6rem', color: 'var(--cyan)', background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.25)', borderRadius: 6, padding: '2px 6px' }}>SYNCED</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%' }}>
+                <span style={{ fontSize: '1.1rem' }}>{room.watchIsPlaying ? '▶' : '⏸'}</span>
+                <span style={{ fontFamily: 'Oswald', fontSize: '0.75rem', color: 'var(--text-dim)' }}>{room.watchIsPlaying ? 'Playing' : 'Paused by host'} · {fmtTime(watchTime)}</span>
+                <span style={{ marginLeft: 'auto', fontFamily: 'Oswald', fontSize: '0.65rem', color: 'var(--cyan)', background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.25)', borderRadius: 6, padding: '3px 8px' }}>🛡️ SYNCED WITH HOST</span>
               </div>
             )}
           </div>
@@ -2831,288 +2850,6 @@ export default function RoomPage() {
   }
 
   // ══════════════════════════════════════════
-  //  MOBILE LAYOUT
-  // ══════════════════════════════════════════
-  if (isMobile) {
-    const MOBILE_TABS = [
-      { id: 'player', icon: musicMode ? '🎵' : '📺', label: 'Player' },
-      { id: 'queue',  icon: '🎶', label: 'Queue' },
-      { id: 'chat',   icon: '💬', label: 'Chat' },
-      { id: 'people', icon: '👥', label: 'People' },
-      { id: 'ai',     icon: '🤖', label: 'AI' },
-    ]
-    return (
-      <div style={{ height: '100dvh', display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative', background: 'var(--bg)' }}>
-        <div className="grid-bg" />
-
-        {/* Mobile Header */}
-        <header style={{ position: 'relative', zIndex: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', backdropFilter: 'blur(20px)', background: 'rgba(13,13,13,0.95)', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Link href="/dashboard" style={{ fontFamily: 'Oswald', fontSize: '1.1rem', fontWeight: 700, color: 'var(--green)', textDecoration: 'none', textShadow: '0 0 12px rgba(0,255,136,0.4)' }}>WE🕊️</Link>
-            <div style={{ fontFamily: 'Oswald', fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-dim)' }}>{room.mode === 'music' ? '🎵' : '📺'} {room.name || 'ROOM'}</div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <button onClick={async () => { 
-              const newMode = !musicMode
-              setMusicMode(newMode)
-              await updateMusicMode(roomId, newMode)
-            }} style={{ width: 32, height: 32, borderRadius: 8, background: musicMode ? 'rgba(0,255,136,0.08)' : 'rgba(52,152,219,0.08)', border: `1px solid ${musicMode ? 'rgba(0,255,136,0.3)' : 'rgba(52,152,219,0.3)'}`, cursor: 'pointer', fontSize: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              {musicMode ? '🎵' : '📺'}
-            </button>
-            <button onClick={copyCode} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(0,255,136,0.08)', border: '1px solid rgba(0,255,136,0.25)', borderRadius: 8, padding: '6px 10px', cursor: 'pointer', fontFamily: 'Oswald', letterSpacing: '0.1em', color: 'var(--green)', fontSize: '0.75rem' }}>
-              {copied ? '✅' : '📋'} {room.roomCode}
-            </button>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'rgba(0,255,136,0.06)', border: '1px solid rgba(0,255,136,0.2)', borderRadius: 8, padding: '4px 8px' }}>
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--green)', boxShadow: '0 0 6px var(--green)', display: 'inline-block' }} />
-              <span style={{ fontFamily: 'Oswald', fontSize: '0.7rem', color: 'var(--green)' }}>{room.participants?.length || 0}</span>
-            </div>
-            <button onClick={handleLeave} style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(233,30,99,0.1)', border: '1px solid rgba(233,30,99,0.3)', color: 'var(--pink)', cursor: 'pointer', fontSize: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
-          </div>
-        </header>
-
-        {/* Mobile Content Area */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative', zIndex: 1 }}>
-
-          {/* ── Participants strip (top) ── */}
-          <div style={{ flexShrink: 0, borderBottom: '1px solid var(--border)', padding: '7px 12px', background: 'rgba(13,13,13,0.7)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' }}>
-              <style>{'.hide-scrollbar::-webkit-scrollbar{display:none}'}</style>
-              {isHost && (
-                <>
-                  <div onClick={() => toggleParticipantQueueAccess(roomId, !room.participantsCanAddToQueue)}
-                    style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 5, padding: '3px 8px', borderRadius: 8, border: `1px solid ${room.participantsCanAddToQueue ? 'rgba(0,255,136,0.4)' : 'var(--border)'}`, background: room.participantsCanAddToQueue ? 'rgba(0,255,136,0.08)' : 'transparent', cursor: 'pointer' }}>
-                    <div style={{ width: 26, height: 14, borderRadius: 7, background: room.participantsCanAddToQueue ? 'var(--green)' : 'rgba(255,255,255,0.12)', position: 'relative', flexShrink: 0, transition: 'background 0.3s' }}>
-                      <div style={{ position: 'absolute', top: 2, left: room.participantsCanAddToQueue ? 13 : 2, width: 10, height: 10, borderRadius: '50%', background: room.participantsCanAddToQueue ? '#000' : 'var(--text-dim)', transition: 'left 0.3s' }} />
-                    </div>
-                    <span style={{ fontFamily: 'Oswald', fontSize: '0.56rem', letterSpacing: '0.07em', textTransform: 'uppercase', color: room.participantsCanAddToQueue ? 'var(--green)' : 'var(--text-dim)', whiteSpace: 'nowrap' }}>Guests {room.participantsCanAddToQueue ? 'Can Add' : 'View Only'}</span>
-                  </div>
-                  <div onClick={() => toggleParticipantFullControl(roomId, !room.participantsFullControl)}
-                    style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 5, padding: '3px 8px', borderRadius: 8, border: `1px solid ${room.participantsFullControl ? 'rgba(168,85,247,0.5)' : 'var(--border)'}`, background: room.participantsFullControl ? 'rgba(168,85,247,0.1)' : 'transparent', cursor: 'pointer' }}>
-                    <div style={{ width: 26, height: 14, borderRadius: 7, background: room.participantsFullControl ? '#a855f7' : 'rgba(255,255,255,0.12)', position: 'relative', flexShrink: 0, transition: 'background 0.3s' }}>
-                      <div style={{ position: 'absolute', top: 2, left: room.participantsFullControl ? 13 : 2, width: 10, height: 10, borderRadius: '50%', background: room.participantsFullControl ? '#fff' : 'var(--text-dim)', transition: 'left 0.3s' }} />
-                    </div>
-                    <span style={{ fontFamily: 'Oswald', fontSize: '0.56rem', letterSpacing: '0.07em', textTransform: 'uppercase', color: room.participantsFullControl ? '#a855f7' : 'var(--text-dim)', whiteSpace: 'nowrap' }}>Full Access {room.participantsFullControl ? 'ON' : 'OFF'}</span>
-                  </div>
-                </>
-              )}
-              {[...(room.participants || [])].sort((a, b) => a.uid === room.hostId ? -1 : b.uid === room.hostId ? 1 : 0).map(p => (
-                <div key={p.uid} style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                  <div style={{ position: 'relative' }}>
-                    <Avatar user={p} size={26} />
-                    <span style={{ position: 'absolute', bottom: -1, right: -1, width: 7, height: 7, borderRadius: '50%', background: 'var(--green)', border: '1px solid var(--bg)', boxShadow: '0 0 4px var(--green)' }} />
-                  </div>
-                  <span style={{ fontSize: '0.5rem', color: p.uid === user?.uid ? 'var(--green)' : 'var(--text-dim)', maxWidth: 36, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {p.uid === room.hostId ? '⭐' : ''}{p.displayName?.split(' ')[0] || 'User'}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* ── Compact Player ── */}
-          <div style={{ flexShrink: 0, borderBottom: '1px solid var(--border)', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            {PlayerContent({ compact: true })}
-          </div>
-
-          {/* ── Tab Bar ── */}
-          <div style={{ flexShrink: 0, display: 'flex', borderBottom: '1px solid var(--border)', background: 'rgba(13,13,13,0.8)', overflowX: 'auto', scrollbarWidth: 'none' }}>
-            <style>{`#mob-tabs::-webkit-scrollbar{display:none}`}</style>
-            <div id="mob-tabs" style={{ display: 'flex', width: '100%' }}>
-              {[['search','🔍','Search'],['queue','🎵','Queue'],['playlists','📋','Playlist'],['aibond','🐻‍❄️','AI Bond'],['chat','💬','Chat'],['lyrics','📝','Lyrics']].map(([id, icon, label]) => {
-                const unread = id === 'chat' && floatMsg
-                return (
-                  <button key={id} onClick={() => setMobileTab(id)}
-                    style={{ flex: 1, minWidth: 56, padding: '9px 4px 7px', background: 'transparent', border: 'none', borderBottom: `2px solid ${mobileTab === id ? 'var(--green)' : 'transparent'}`, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, position: 'relative', transition: 'border-color 0.2s' }}>
-                    <span style={{ fontSize: '1rem', filter: mobileTab === id ? 'drop-shadow(0 0 5px rgba(0,255,136,0.7))' : 'none' }}>{icon}</span>
-                    <span style={{ fontFamily: 'Oswald', fontSize: '0.5rem', letterSpacing: '0.06em', textTransform: 'uppercase', color: mobileTab === id ? 'var(--green)' : 'var(--text-dim)' }}>{label}</span>
-                    {unread && <span style={{ position: 'absolute', top: 5, right: '18%', width: 7, height: 7, borderRadius: '50%', background: 'var(--pink)', boxShadow: '0 0 6px var(--pink)' }} />}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* ── Tab Content ── */}
-          <div style={{ flex: 1, overflow: 'hidden', minHeight: 0, position: 'relative' }}>
-            <div style={{ display: mobileTab === 'search' || mobileTab === 'queue' || mobileTab === 'playlists' ? 'flex' : 'none', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-              <SearchAndQueue room={room} isHost={canFullControl} canAdd={canAdd} onAddToQueue={handleAddToQueue} onPlayNow={handlePlayNow} onRemove={i => canFullControl && removeFromQueue(roomId, i)} ytAccessToken={ytToken} initialTab={mobileTab === 'playlists' ? 'playlists' : mobileTab === 'queue' ? 'queue' : 'search'} hideTabs={true} roomId={roomId} playedHistory={room.playedHistory || []} onStartPlaylist={handleStartPlaylist} onShufflePlaylist={handleShufflePlaylist} onTokenExpired={refreshYtToken} />
-            </div>
-            <div style={{ display: mobileTab === 'aibond' ? 'flex' : 'none', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-              <AIBondPanel room={room} canAdd={canAdd} onAddToQueue={handleAddToQueue} ytAccessToken={ytToken} />
-            </div>
-            <div style={{ display: mobileTab === 'chat' ? 'flex' : 'none', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-              <ChatPanel roomId={roomId} messages={messages} currentUser={user} />
-            </div>
-            <div style={{ display: mobileTab === 'lyrics' ? 'flex' : 'none', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-              <LyricsPanel lines={lyrics.lines} plain={lyrics.plain} synced={lyrics.synced} loading={lyrics.loading} currentTime={currentTime} />
-            </div>
-          </div>
-
-          {/* ── Floating new message bubble ── */}
-          {floatMsg && mobileTab !== 'chat' && (
-            <div onClick={() => setMobileTab('chat')}
-              style={{ position: 'absolute', bottom: 12, left: 12, right: 12, zIndex: 30, background: 'rgba(13,13,13,0.97)', border: '1px solid rgba(233,30,99,0.35)', borderRadius: 12, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', boxShadow: '0 4px 24px rgba(0,0,0,0.7)', animation: 'slideUpFade 0.3s ease' }}>
-              <style>{`@keyframes slideUpFade{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}`}</style>
-              <div style={{ width: 26, height: 26, borderRadius: '50%', background: 'rgba(233,30,99,0.2)', border: '1px solid rgba(233,30,99,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Oswald', fontWeight: 700, fontSize: '0.7rem', color: 'var(--pink)', flexShrink: 0 }}>{floatMsg.displayName?.charAt(0).toUpperCase()}</div>
-              <div style={{ flex: 1, overflow: 'hidden' }}>
-                <span style={{ fontFamily: 'Oswald', fontSize: '0.68rem', color: 'var(--pink)', marginRight: 6 }}>{floatMsg.displayName}</span>
-                <span style={{ fontSize: '0.78rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block', maxWidth: '70%', verticalAlign: 'bottom' }}>{floatMsg.text}</span>
-              </div>
-              <span style={{ fontSize: '0.65rem', color: 'var(--text-dim)', flexShrink: 0 }}>💬</span>
-            </div>
-          )}
-
-        </div>
-      </div>
-    )
-  }
-
-  // ══════════════════════════════════════════
-  //  WATCH URL ROOM — DESKTOP
-  // ══════════════════════════════════════════
-  if (room.watchUrl) {
-    const isYt = /youtube\.com\/embed/.test(room.watchUrl)
-    const fmtTime = s => { const m = Math.floor(s/60); const sec = Math.floor(s%60); return `${m}:${sec.toString().padStart(2,'0')}` }
-    return (
-      <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#000', position: 'relative' }}>
-        <div className="grid-bg" style={{ opacity: 0.3 }} />
-
-        {/* Header */}
-        <header style={{ position: 'relative', zIndex: 10, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 24px', background: 'rgba(13,13,13,0.95)', borderBottom: '1px solid rgba(0,200,255,0.15)', backdropFilter: 'blur(20px)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            <Link href="/dashboard" style={{ fontFamily: 'Oswald', fontSize: '1.2rem', fontWeight: 700, color: 'var(--cyan)', textDecoration: 'none', textShadow: '0 0 15px rgba(0,200,255,0.5)' }}>WE🕊️</Link>
-            <div style={{ width: 1, height: 20, background: 'var(--border)' }} />
-            <div>
-              <div style={{ fontFamily: 'Oswald', fontSize: '0.6rem', letterSpacing: '0.12em', color: 'var(--text-dim)', textTransform: 'uppercase' }}>Watch Room</div>
-              <div style={{ fontFamily: 'Oswald', fontSize: '1rem', fontWeight: 600, color: 'var(--cyan)' }}>📺 {room.name || room.roomCode}</div>
-            </div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div className="badge" style={{ background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.25)', color: 'var(--cyan)' }}>
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--cyan)', boxShadow: '0 0 4px var(--cyan)', display: 'inline-block', marginRight: 5 }} />
-              {room.participants?.length || 0} watching
-            </div>
-            {isHost && <div className="badge" style={{ background: 'rgba(243,156,18,0.1)', border: '1px solid rgba(243,156,18,0.3)', color: '#f39c12' }}>⭐ HOST</div>}
-            <button onClick={copyCode} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.25)', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontFamily: 'Oswald', color: 'var(--cyan)', fontSize: '0.85rem', letterSpacing: '0.1em' }}>
-              {copied ? '✅' : '📋'} {room.roomCode}
-            </button>
-            <button onClick={handleLeave} className="btn-danger" style={{ padding: '7px 14px', fontSize: '0.8rem' }}>Leave</button>
-          </div>
-        </header>
-
-        {/* URL Bar — host only */}
-        {isHost && (
-          <form onSubmit={e => {
-            e.preventDefault()
-            const s = watchUrlInput.trim()
-            if (!s) return
-            const ytMatch = s.match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/)
-            const dmMatch = s.match(/dailymotion\.com\/(?:video|embed\/video)\/([A-Za-z0-9]+)/)
-            const vimeoMatch = s.match(/vimeo\.com\/(\d+)/)
-            const url = ytMatch ? `https://www.youtube.com/embed/${ytMatch[1]}?autoplay=1&rel=0&enablejsapi=1`
-              : dmMatch ? `https://www.dailymotion.com/embed/video/${dmMatch[1]}?autoplay=1`
-              : vimeoMatch ? `https://player.vimeo.com/video/${vimeoMatch[1]}?autoplay=1`
-              : (/^https?:\/\//i.test(s) ? s : null)
-            if (!url) { toast.error('Invalid URL'); return }
-            updateWatchPlayback(roomId, { watchUrl: url, watchIsPlaying: false, watchCurrentTime: 0, watchUpdatedAt: Date.now() })
-            setWatchUrlInput('')
-          }} style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '8px 20px', background: 'rgba(13,13,13,0.97)', borderBottom: '1px solid rgba(0,200,255,0.12)', position: 'relative', zIndex: 10 }}>
-            <span style={{ fontSize: '0.9rem', flexShrink: 0 }}>🔗</span>
-            <input
-              value={watchUrlInput}
-              onChange={e => setWatchUrlInput(e.target.value)}
-              placeholder={room.watchUrl || 'Paste new video URL…'}
-              style={{ flex: 1, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(0,200,255,0.2)', borderRadius: 8, padding: '7px 14px', color: '#fff', fontSize: '0.82rem', fontFamily: 'inherit', outline: 'none' }}
-            />
-            <button type="submit" style={{ flexShrink: 0, background: 'var(--cyan)', border: 'none', borderRadius: 8, padding: '8px 18px', color: '#000', fontFamily: 'Oswald', fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer', letterSpacing: '0.08em', boxShadow: '0 0 12px rgba(0,200,255,0.3)' }}>GO</button>
-            {!isYt && (
-              <button type="button" onClick={() => setWatchCrop(c => !c)} title="Crop to video only" style={{ flexShrink: 0, background: watchCrop ? 'rgba(0,200,255,0.15)' : 'rgba(255,255,255,0.05)', border: `1px solid ${watchCrop ? 'rgba(0,200,255,0.4)' : 'rgba(255,255,255,0.15)'}`, borderRadius: 8, padding: '8px 12px', color: watchCrop ? 'var(--cyan)' : 'var(--text-dim)', cursor: 'pointer', fontSize: '0.8rem' }}>✂️ {watchCrop ? 'Cropped' : 'Crop'}</button>
-            )}
-          </form>
-        )}
-
-        {/* Body: video+controls column + chat sidebar */}
-        <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
-          {/* Video + Controls */}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#000' }}>
-            <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
-              {isYt ? (
-                <YouTube
-                  key={room.watchUrl}
-                  videoId={room.watchUrl.match(/embed\/([A-Za-z0-9_-]{11})/)?.[1]}
-                  opts={{ width: '100%', height: '100%', playerVars: { autoplay: 1, controls: 1, rel: 0, playsinline: 1 } }}
-                  onReady={handleWatchPlayerReady}
-                  style={{ width: '100%', height: '100%' }}
-                />
-              ) : (
-                <iframe
-                  key={room.watchUrl}
-                  src={`/api/proxy?url=${encodeURIComponent(room.watchUrl)}`}
-                  allow="autoplay; fullscreen; picture-in-picture"
-                  allowFullScreen
-                  style={{ position: 'absolute', top: watchCrop ? -65 : 0, left: 0, width: '100%', height: watchCrop ? 'calc(100% + 65px)' : '100%', border: 'none', display: 'block' }}
-                  title="Watch together"
-                />
-              )}
-            </div>
-            {/* Sync controls */}
-            {isYt && (
-              <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 14, padding: '10px 20px', background: 'rgba(13,13,13,0.97)', borderTop: '1px solid rgba(0,200,255,0.15)' }}>
-                {canControl ? (
-                  <>
-                    <button
-                      onClick={() => {
-                        const nowPlaying = !room.watchIsPlaying
-                        const t = watchGetTime()
-                        if (nowPlaying) watchPlay(); else watchPause()
-                        updateWatchPlayback(roomId, { watchIsPlaying: nowPlaying, watchCurrentTime: t, watchUpdatedAt: Date.now() })
-                      }}
-                      style={{ width: 44, height: 44, borderRadius: '50%', background: 'var(--cyan)', border: 'none', cursor: 'pointer', fontSize: '1.2rem', color: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 0 16px rgba(0,200,255,0.4)', transition: 'transform 0.15s' }}
-                      onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.1)'}
-                      onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
-                    >{room.watchIsPlaying ? '⏸' : '▶'}</button>
-                    <span style={{ fontFamily: 'Oswald', fontSize: '0.8rem', color: 'var(--cyan)', flexShrink: 0, minWidth: 42 }}>{fmtTime(watchTime)}</span>
-                    <input type="range" min="0" max="7200" value={watchTime}
-                      onChange={e => { setWatchTime(+e.target.value) }}
-                      onMouseUp={e => { watchSeek(+e.target.value); updateWatchPlayback(roomId, { watchCurrentTime: +e.target.value, watchUpdatedAt: Date.now() }) }}
-                      style={{ flex: 1, accentColor: 'var(--cyan)', cursor: 'pointer' }}
-                    />
-                    <span style={{ fontFamily: 'Oswald', fontSize: '0.65rem', color: 'var(--text-dim)', flexShrink: 0 }}>{isHost ? '⭐ HOST CONTROLS' : '🛡️ IN SYNC'}</span>
-                  </>
-                ) : (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%' }}>
-                    <span style={{ fontSize: '1.1rem' }}>{room.watchIsPlaying ? '▶️' : '⏸️'}</span>
-                    <span style={{ fontFamily: 'Oswald', fontSize: '0.75rem', color: 'var(--text-dim)' }}>{room.watchIsPlaying ? 'Playing' : 'Paused by host'} · {fmtTime(watchTime)}</span>
-                    <span style={{ marginLeft: 'auto', fontFamily: 'Oswald', fontSize: '0.65rem', color: 'var(--cyan)', background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.25)', borderRadius: 6, padding: '3px 8px' }}>🛡️ SYNCED WITH HOST</span>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Chat + People sidebar */}
-          <div style={{ width: 300, flexShrink: 0, borderLeft: '1px solid rgba(0,200,255,0.12)', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'rgba(13,13,13,0.8)' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', borderBottom: '1px solid var(--border)' }}>
-              {[['chat','💬 Chat'],['people','👥 People']].map(([id, label]) => (
-                <button key={id} onClick={() => setRightTab(id)}
-                  style={{ padding: '11px 8px', background: 'transparent', border: 'none', borderBottom: `2px solid ${rightTab === id ? 'var(--cyan)' : 'transparent'}`, marginBottom: -1, color: rightTab === id ? 'var(--cyan)' : 'var(--text-dim)', fontFamily: 'Oswald', fontSize: '0.72rem', letterSpacing: '0.08em', textTransform: 'uppercase', cursor: 'pointer', transition: 'color 0.2s' }}>
-                  {label}
-                </button>
-              ))}
-            </div>
-            <div style={{ flex: 1, overflow: 'hidden' }}>
-              {rightTab === 'chat'
-                ? <ChatPanel roomId={roomId} messages={messages} currentUser={user} />
-                : <ParticipantsPanel room={room} currentUser={user} isHost={isHost} roomId={roomId} watchTimes={room.watchTimes} />
-              }
-            </div>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  // ══════════════════════════════════════════
   //  DESKTOP LAYOUT
   // ══════════════════════════════════════════
   return (
@@ -3122,7 +2859,7 @@ export default function RoomPage() {
       {/* Header */}
       <header style={{ position: 'relative', zIndex: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 20px', backdropFilter: 'blur(20px)', background: 'rgba(13,13,13,0.9)', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <Link href="/dashboard" style={{ fontFamily: 'Oswald', fontSize: '1.2rem', fontWeight: 700, color: 'var(--green)', textDecoration: 'none', textShadow: '0 0 15px rgba(0,255,136,0.4)' }}>WE🕊️</Link>
+          <Link href="/dashboard" style={{ fontFamily: 'Oswald', fontSize: '1.2rem', fontWeight: 700, color: 'var(--green)', textDecoration: 'none', textShadow: '0 0 15px rgba(0,200,255,0.5)' }}>WE🕊️</Link>
           <div style={{ width: 1, height: 20, background: 'var(--border)' }} />
           <div>
             <div style={{ fontFamily: 'Oswald', fontSize: '0.65rem', letterSpacing: '0.12em', color: 'var(--text-dim)', textTransform: 'uppercase' }}>Room</div>
@@ -3165,7 +2902,8 @@ export default function RoomPage() {
                 <span style={{ fontFamily: 'Oswald', fontSize: '0.65rem', letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--text-dim)' }}>Queue & Search</span>
                 <button onClick={() => setLeftCollapsed(true)} title="Collapse sidebar" style={{ width: 26, height: 26, borderRadius: 6, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-dim)', cursor: 'pointer', fontSize: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all 0.2s' }}
                   onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--green)'; e.currentTarget.style.color = 'var(--green)' }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-dim)' }}>◀</button>
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-dim)' }}
+                >◀</button>
               </div>
               <SearchAndQueue room={room} isHost={canFullControl} canAdd={canAdd} onAddToQueue={handleAddToQueue} onPlayNow={handlePlayNow} onRemove={i => canFullControl && removeFromQueue(roomId, i)} ytAccessToken={ytToken} roomId={roomId} playedHistory={room.playedHistory || []} onStartPlaylist={handleStartPlaylist} onShufflePlaylist={handleShufflePlaylist} onTokenExpired={refreshYtToken} />
             </>
@@ -3218,28 +2956,30 @@ export default function RoomPage() {
                           onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-dim)' }}
                         >⏮</button>
                       )}
-                      <button onClick={handlePlayPause} style={{ width: 46, height: 46, borderRadius: '50%', background: '#f97316', border: 'none', cursor: 'pointer', fontSize: '1.1rem', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 20px rgba(249,115,22,0.5)', transition: 'transform 0.15s', flexShrink: 0 }}
+                      <button onClick={handlePlayPause} style={{ width: 46, height: 46, borderRadius: '50%', background: 'var(--green)', border: 'none', cursor: 'pointer', fontSize: '1.1rem', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 20px rgba(0,255,136,0.4)', transition: 'transform 0.15s', flexShrink: 0 }}
                         onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.08)'}
                         onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
                       >{room.isPlaying ? '⏸' : '▶'}</button>
                       <button onClick={() => skipToNext(roomId)} style={{ width: 34, height: 34, borderRadius: '50%', background: 'var(--glass)', border: '1px solid var(--border)', cursor: 'pointer', fontSize: '0.82rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
-                        onMouseEnter={e => { e.currentTarget.style.borderColor = '#f97316'; e.currentTarget.style.color = '#f97316' }}
+                        onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--green)'; e.currentTarget.style.color = 'var(--green)' }}
                         onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-dim)' }}
                       >⏭</button>
-                      <button style={{ background: 'none', border: 'none', cursor: 'default', fontSize: '0.95rem', color: 'rgba(255,255,255,0.25)', padding: 2, lineHeight: 1 }}>⇄</button>
                       {volumeWidget}
-                      <button onClick={openMobilePip} title="Pop out mini player" style={{ width: 30, height: 30, borderRadius: '50%', background: 'var(--glass)', border: '1px solid var(--border)', cursor: 'pointer', fontSize: '0.75rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
-                        onMouseEnter={e => { e.currentTarget.style.borderColor = '#f97316'; e.currentTarget.style.color = '#f97316' }}
+                      <button onClick={openMobilePip} title="Pop out mini player" style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--glass)', border: '1px solid var(--border)', cursor: 'pointer', fontSize: '0.85rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                        onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--green)'; e.currentTarget.style.color = 'var(--green)' }}
                         onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-dim)' }}
                       >⧉</button>
-                      <button onClick={() => { pipLyricsRef.current = !pipLyricsRef.current; setPipLyricsOn(pipLyricsRef.current) }} title={pipLyricsOn ? 'Hide PiP lyrics' : 'Show PiP lyrics'} style={{ width: 30, height: 30, borderRadius: '50%', background: 'var(--glass)', border: `1px solid ${pipLyricsOn ? 'rgba(249,115,22,0.6)' : 'var(--border)'}`, cursor: 'pointer', fontSize: '0.75rem', color: pipLyricsOn ? '#f97316' : 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}>🎤</button>
+                      <button onClick={() => { pipLyricsRef.current = !pipLyricsRef.current; setPipLyricsOn(pipLyricsRef.current) }} title={pipLyricsOn ? 'Hide PiP lyrics' : 'Show PiP lyrics'} style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--glass)', border: `1px solid ${pipLyricsOn ? 'rgba(249,115,22,0.6)' : 'var(--border)'}`, cursor: 'pointer', fontSize: '0.85rem', color: pipLyricsOn ? '#f97316' : 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}>🎤</button>
                     </div>
                   ) : (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 12, flexShrink: 0 }}>
-                      <span style={{ color: 'var(--text-dim)', fontSize: '0.78rem', fontStyle: 'italic' }}>{room.isPlaying ? '▶ Playing • Synced with host' : '⏸ Paused by host'}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+                      <span style={{ color: 'var(--text-dim)', fontSize: '0.8rem', fontStyle: 'italic' }}>{room.isPlaying ? '▶ Playing • Synced with host' : '⏸ Paused by host'}</span>
                       {volumeWidget}
-                      <button onClick={openMobilePip} title="Pop out mini player" style={{ width: 30, height: 30, borderRadius: '50%', background: 'var(--glass)', border: '1px solid var(--border)', cursor: 'pointer', fontSize: '0.75rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>⧉</button>
-                      <button onClick={() => { pipLyricsRef.current = !pipLyricsRef.current; setPipLyricsOn(pipLyricsRef.current) }} title={pipLyricsOn ? 'Hide PiP lyrics' : 'Show PiP lyrics'} style={{ width: 30, height: 30, borderRadius: '50%', background: 'var(--glass)', border: `1px solid ${pipLyricsOn ? 'rgba(249,115,22,0.6)' : 'var(--border)'}`, cursor: 'pointer', fontSize: '0.75rem', color: pipLyricsOn ? '#f97316' : 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>🎤</button>
+                      <button onClick={openMobilePip} title="Pop out mini player" style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--glass)', border: '1px solid var(--border)', cursor: 'pointer', fontSize: '0.85rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                        onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--green)'; e.currentTarget.style.color = 'var(--green)' }}
+                        onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-dim)' }}
+                      >⧉</button>
+                      <button onClick={() => { pipLyricsRef.current = !pipLyricsRef.current; setPipLyricsOn(pipLyricsRef.current) }} title={pipLyricsOn ? 'Hide PiP lyrics' : 'Show PiP lyrics'} style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--glass)', border: `1px solid ${pipLyricsOn ? 'rgba(249,115,22,0.6)' : 'var(--border)'}`, cursor: 'pointer', fontSize: '0.85rem', color: pipLyricsOn ? '#f97316' : 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}>🎤</button>
                     </div>
                   )}
                   {/* Lyrics — fills remaining height */}
@@ -3265,7 +3005,7 @@ export default function RoomPage() {
                           onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-dim)' }}
                         >⏮</button>
                       )}
-                      <button onClick={handlePlayPause} style={{ width: 52, height: 52, borderRadius: '50%', background: 'var(--green)', border: 'none', cursor: 'pointer', fontSize: '1.2rem', color: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 20px rgba(0,255,136,0.4)', transition: 'transform 0.15s' }}
+                      <button onClick={handlePlayPause} style={{ width: 52, height: 52, borderRadius: '50%', background: 'var(--green)', border: 'none', cursor: 'pointer', fontSize: '1.2rem', color: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 20px rgba(0,255,136,0.4)', transition: 'transform 0.15s', flexShrink: 0 }}
                         onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.1)'}
                         onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
                       >{room.isPlaying ? '⏸' : '▶'}</button>
