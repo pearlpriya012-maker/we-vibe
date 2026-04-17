@@ -1561,12 +1561,12 @@ export default function RoomPage() {
   }
 
   // ─── Picture-in-Picture mini player ─────────────────────────────────────
-  // Primary: Document PiP API (Chrome 116+) — opens exact-sized always-on-top popup.
-  // Fallback: canvas captureStream → video.requestPictureInPicture() (aspect-ratio only).
-  // Sizes: 96×96 (no lyrics) · 260×72 (with lyrics)
+  // Primary: Document PiP API (Chrome 116+) — exact 260×110 popup with HTML controls.
+  //   • Lyrics toggle works live (reads pipLyricsRef.current each frame).
+  //   • Real ⏪ ▶/⏸ ⏩ 🎤 buttons rendered in the popup window.
+  // Fallback: canvas → video.requestPictureInPicture().
   async function openMobilePip() {
-    const withLyrics = pipLyricsRef.current
-    const W = withLyrics ? 260 : 96, H = withLyrics ? 72 : 96
+    const W = 260 // fixed width; height = 66 canvas + 44 controls bar
 
     // ── Toggle off ──
     try {
@@ -1583,8 +1583,6 @@ export default function RoomPage() {
     }
 
     initAudioKeepAlive()
-
-    // ── Shared state ──
     const anim = { frame: 0, thumbImg: null, lastTrackId: null, skipFired: false, accent: [249, 115, 22] }
 
     function loadThumb(url) {
@@ -1616,13 +1614,14 @@ export default function RoomPage() {
       img.src = url
     }
 
-    // ── Canvas draw factory (same logic regardless of which PiP type is used) ──
-    function makeDrawFrame(ctx) {
+    // ── Canvas draw: fixed 260×H canvas, reads pipLyricsRef.current LIVE each frame ──
+    function makeDrawFrame(ctx, H) {
       return function drawFrame() {
         anim.frame++
         const liveRoom = roomRef.current
         const track = liveRoom?.currentTrack
         const playing = liveRoom?.isPlaying
+        const showLyrics = pipLyricsRef.current   // read live — toggle works immediately
         if (track?.videoId !== anim.lastTrackId) {
           anim.lastTrackId = track?.videoId || null
           anim.thumbImg = null; anim.skipFired = false
@@ -1642,66 +1641,47 @@ export default function RoomPage() {
         try { const p = ytPlayerRef.current; ct = p?.getCurrentTime?.()??0; dur = p?.getDuration?.()??0 } catch {}
         const pct = dur > 0 ? Math.min(1, ct/dur) : 0
         const [ar,ag,ab] = anim.accent, accentRGB = `rgb(${ar},${ag},${ab})`
-        // Background
+        // Background: blurred album art
         if (anim.thumbImg) {
           ctx.filter = 'blur(14px) brightness(0.28) saturate(2)'
           ctx.drawImage(anim.thumbImg, -8, -8, W+16, H+16)
           ctx.filter = 'none'
         } else { ctx.fillStyle = '#0a0a12'; ctx.fillRect(0,0,W,H) }
-        ctx.fillStyle = 'rgba(0,0,0,0.42)'; ctx.fillRect(0,0,W,H)
+        ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(0,0,W,H)
         const trunc = (s, maxW) => {
           if (ctx.measureText(s).width <= maxW) return s
           let t = s; while (t.length>1 && ctx.measureText(t+'…').width>maxW) t=t.slice(0,-1); return t+'…'
         }
-        const drawThumb = (x, y, sz) => {
-          ctx.save(); ctx.beginPath()
-          if (ctx.roundRect) ctx.roundRect(x,y,sz,sz,6); else ctx.rect(x,y,sz,sz)
-          ctx.clip()
-          if (anim.thumbImg) {
-            const iw = anim.thumbImg.naturalWidth||anim.thumbImg.width
-            const ih = anim.thumbImg.naturalHeight||anim.thumbImg.height
-            let sx=0,sy=0,sw=iw,sh=ih
-            if (iw/ih>1){sw=ih;sx=(iw-sw)/2}else{sh=iw;sy=(ih-sh)/2}
-            ctx.drawImage(anim.thumbImg,sx,sy,sw,sh,x,y,sz,sz)
-          } else {
-            ctx.fillStyle='#1a1a2e'; ctx.fillRect(x,y,sz,sz)
-            ctx.fillStyle=accentRGB; ctx.font=`${Math.round(sz*0.38)}px system-ui`
-            ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('♫',x+sz/2,y+sz/2)
-          }
-          ctx.restore()
-          ctx.strokeStyle=`rgba(${ar},${ag},${ab},0.4)`; ctx.lineWidth=1
-          if (ctx.roundRect){ctx.beginPath();ctx.roundRect(x,y,sz,sz,6);ctx.stroke()}
-        }
-        if (!withLyrics) {
-          // 96×96: album art fills most, title strip at bottom
-          const sz=80, ax=(W-sz)/2, ay=4
-          drawThumb(ax,ay,sz)
-          const gr=ctx.createLinearGradient(0,60,0,H)
-          gr.addColorStop(0,'rgba(0,0,0,0)'); gr.addColorStop(1,'rgba(0,0,0,0.92)')
-          ctx.fillStyle=gr; ctx.fillRect(0,60,W,H-60)
-          ctx.font='bold 9px system-ui'; ctx.textAlign='center'; ctx.fillStyle='#fff'; ctx.textBaseline='alphabetic'
-          ctx.fillText(trunc(track?.title||'♫',W-8),W/2,H-7)
-          ctx.fillStyle='rgba(255,255,255,0.1)'; ctx.fillRect(0,H-2,W,2)
-          ctx.fillStyle=accentRGB; ctx.fillRect(0,H-2,W*pct,2)
-          if (playing) {
-            const p2=0.5+0.5*Math.sin(anim.frame*0.15)
-            ctx.shadowColor=accentRGB; ctx.shadowBlur=4
-            ctx.beginPath(); ctx.arc(W-7,7,3,0,Math.PI*2)
-            ctx.fillStyle=`rgba(${ar},${ag},${ab},${p2.toFixed(2)})`; ctx.fill()
-            ctx.shadowBlur=0; ctx.shadowColor='transparent'
-          }
+        // Album art 52×52, vertically centered
+        const sz=52, sqX=7, sqY=Math.floor((H-sz)/2)
+        ctx.save(); ctx.beginPath()
+        if (ctx.roundRect) ctx.roundRect(sqX,sqY,sz,sz,6); else ctx.rect(sqX,sqY,sz,sz)
+        ctx.clip()
+        if (anim.thumbImg) {
+          const iw=anim.thumbImg.naturalWidth||anim.thumbImg.width
+          const ih=anim.thumbImg.naturalHeight||anim.thumbImg.height
+          let sx2=0,sy2=0,sw=iw,sh=ih
+          if (iw/ih>1){sw=ih;sx2=(iw-sw)/2}else{sh=iw;sy2=(ih-sh)/2}
+          ctx.drawImage(anim.thumbImg,sx2,sy2,sw,sh,sqX,sqY,sz,sz)
         } else {
-          // 260×72: 58×58 album art left + info right
-          const sz=58, sqX=7, sqY=7
-          drawThumb(sqX,sqY,sz)
-          const txX=sqX+sz+8, txW=W-txX-6
-          const title=track?.title||'Nothing playing'
-          const artist=(track?.channelTitle||'').replace(/\s*-\s*Topic$/i,'').trim()
-          ctx.textBaseline='alphabetic'; ctx.textAlign='left'
+          ctx.fillStyle='#1a1a2e'; ctx.fillRect(sqX,sqY,sz,sz)
+          ctx.fillStyle=accentRGB; ctx.font=`${Math.round(sz*0.38)}px system-ui`
+          ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('♫',sqX+sz/2,sqY+sz/2)
+        }
+        ctx.restore()
+        ctx.strokeStyle=`rgba(${ar},${ag},${ab},0.4)`; ctx.lineWidth=1
+        if (ctx.roundRect){ctx.beginPath();ctx.roundRect(sqX,sqY,sz,sz,6);ctx.stroke()}
+        // Right info panel
+        const txX=sqX+sz+8, txW=W-txX-6
+        const title = track?.title||'Nothing playing'
+        const artist = (track?.channelTitle||'').replace(/\s*-\s*Topic$/i,'').trim()
+        ctx.textBaseline='alphabetic'; ctx.textAlign='left'
+        if (showLyrics) {
           ctx.font='bold 10px system-ui'; ctx.fillStyle='#fff'
-          ctx.fillText(trunc(title,txW),txX,18)
-          ctx.font='9px system-ui'; ctx.fillStyle='rgba(255,255,255,0.5)'
-          ctx.fillText(trunc(artist,txW),txX,30)
+          ctx.fillText(trunc(title,txW),txX,14)
+          ctx.font='8px system-ui'; ctx.fillStyle='rgba(255,255,255,0.5)'
+          ctx.fillText(trunc(artist,txW),txX,25)
+          // Live lyrics line
           const lyrSnap=lyricsRef.current
           const hasSync=lyrSnap?.synced&&lyrSnap?.lines?.length>0
           const plainText=!hasSync&&lyrSnap?.plain?lyrSnap.plain:null
@@ -1709,32 +1689,39 @@ export default function RoomPage() {
             const lines=lyrSnap.lines
             const ai=lines.reduce((best,l,i)=>l.time<=ct?i:best,0)
             ctx.font='bold 10px system-ui'; ctx.fillStyle=accentRGB
-            ctx.fillText(trunc(lines[ai].text,txW),txX,46)
-            if (lines[ai+1]){ctx.font='8px system-ui';ctx.fillStyle=`rgba(${ar},${ag},${ab},0.6)`;ctx.fillText(trunc(lines[ai+1].text,txW),txX,58)}
+            ctx.fillText(trunc(lines[ai].text,txW),txX,40)
+            if (lines[ai+1]){ctx.font='8px system-ui';ctx.fillStyle=`rgba(${ar},${ag},${ab},0.6)`;ctx.fillText(trunc(lines[ai+1].text,txW),txX,52)}
           } else if (plainText?.trim().length>4) {
             const pl=plainText.split('\n').map(l=>l.trim()).filter(l=>l)
             const pi=dur>5?Math.min(pl.length-1,Math.floor((ct/dur)*pl.length)):0
             ctx.font='bold 10px system-ui'; ctx.fillStyle=accentRGB
-            ctx.fillText(trunc(pl[pi]||'',txW),txX,46)
-            if (pl[pi+1]){ctx.font='8px system-ui';ctx.fillStyle=`rgba(${ar},${ag},${ab},0.6)`;ctx.fillText(trunc(pl[pi+1],txW),txX,58)}
+            ctx.fillText(trunc(pl[pi]||'',txW),txX,40)
+            if (pl[pi+1]){ctx.font='8px system-ui';ctx.fillStyle=`rgba(${ar},${ag},${ab},0.6)`;ctx.fillText(trunc(pl[pi+1],txW),txX,52)}
           } else {
-            ctx.font='9px system-ui'; ctx.fillStyle='rgba(255,255,255,0.25)'
-            ctx.fillText('No lyrics',txX,46)
+            ctx.font='9px system-ui'; ctx.fillStyle='rgba(255,255,255,0.2)'
+            ctx.fillText('No lyrics',txX,40)
           }
-          ctx.fillStyle='rgba(255,255,255,0.1)'; ctx.fillRect(0,H-2,W,2)
-          ctx.fillStyle=accentRGB; ctx.fillRect(0,H-2,W*pct,2)
-          if (playing) {
-            const p2=0.5+0.5*Math.sin(anim.frame*0.15)
-            ctx.shadowColor=accentRGB; ctx.shadowBlur=4
-            ctx.beginPath(); ctx.arc(W-7,7,3,0,Math.PI*2)
-            ctx.fillStyle=`rgba(${ar},${ag},${ab},${p2.toFixed(2)})`; ctx.fill()
-            ctx.shadowBlur=0; ctx.shadowColor='transparent'
-          }
+        } else {
+          ctx.font='bold 11px system-ui'; ctx.fillStyle='#fff'
+          ctx.fillText(trunc(title,txW),txX,22)
+          ctx.font='9px system-ui'; ctx.fillStyle='rgba(255,255,255,0.5)'
+          ctx.fillText(trunc(artist,txW),txX,35)
+        }
+        // Progress sliver at bottom
+        ctx.fillStyle='rgba(255,255,255,0.1)'; ctx.fillRect(0,H-2,W,2)
+        ctx.fillStyle=accentRGB; ctx.fillRect(0,H-2,W*pct,2)
+        // Pulse dot (playing indicator)
+        if (playing) {
+          const p2=0.5+0.5*Math.sin(anim.frame*0.15)
+          ctx.shadowColor=accentRGB; ctx.shadowBlur=4
+          ctx.beginPath(); ctx.arc(W-7,7,3,0,Math.PI*2)
+          ctx.fillStyle=`rgba(${ar},${ag},${ab},${p2.toFixed(2)})`; ctx.fill()
+          ctx.shadowBlur=0; ctx.shadowColor='transparent'
         }
       }
     }
 
-    // ── Watchdog (auto-advance when tab hidden) ──
+    // ── Watchdog: auto-advance tracks when tab is hidden ──
     let watchdogInterval = null
     function startWatchdog() {
       watchdogInterval = setInterval(() => {
@@ -1759,7 +1746,7 @@ export default function RoomPage() {
       }, 1000)
     }
 
-    // ── Media Session ──
+    // ── Media Session (notification shade controls) ──
     function setupMediaSession() {
       if (!('mediaSession' in navigator)) return
       try {
@@ -1785,52 +1772,90 @@ export default function RoomPage() {
 
     // ════════════════════════════════════════════════════════
     //  PRIMARY: Document Picture-in-Picture (Chrome 116+)
-    //  Opens a real popup window at EXACT pixel dimensions.
+    //  Exact pixel dimensions + real HTML buttons in popup.
     // ════════════════════════════════════════════════════════
     if ('documentPictureInPicture' in window) {
       try {
-        const pipWin = await window.documentPictureInPicture.requestWindow({ width: W, height: H })
-        pipWin.document.body.style.cssText = `margin:0;padding:0;overflow:hidden;background:#000;`
+        const H_CANVAS = 66, H_BAR = 44
+        const pipWin = await window.documentPictureInPicture.requestWindow({ width: W, height: H_CANVAS + H_BAR })
+        pipWin.document.body.style.cssText = 'margin:0;padding:0;overflow:hidden;background:#0a0a12;display:flex;flex-direction:column;'
+
+        // Track info canvas
         const canvas = pipWin.document.createElement('canvas')
-        canvas.width = W; canvas.height = H
-        canvas.style.cssText = `display:block;width:${W}px;height:${H}px;`
+        canvas.width = W; canvas.height = H_CANVAS
+        canvas.style.cssText = `display:block;width:${W}px;height:${H_CANVAS}px;flex-shrink:0;`
         pipWin.document.body.appendChild(canvas)
+
+        // Controls bar with real HTML buttons
+        const bar = pipWin.document.createElement('div')
+        bar.style.cssText = `display:flex;align-items:center;justify-content:center;gap:8px;height:${H_BAR}px;background:rgba(0,0,0,0.88);padding:0 8px;flex-shrink:0;border-top:1px solid rgba(255,255,255,0.08);`
+        const mkBtn = (html, title, bg) => {
+          const b = pipWin.document.createElement('button')
+          b.innerHTML = html; b.title = title
+          b.style.cssText = `background:${bg||'rgba(255,255,255,0.08)'};border:1px solid rgba(255,255,255,0.12);color:#fff;font-size:14px;width:34px;height:28px;border-radius:7px;cursor:pointer;line-height:1;padding:0;`
+          return b
+        }
+        // ⏪ -10s
+        const btnBack = mkBtn('⏪', '-10s')
+        btnBack.onclick = () => { try { const p=ytPlayerRef.current; p?.seekTo?.(Math.max(0,(p?.getCurrentTime?.()||0)-10),true) } catch {} }
+        // ▶/⏸ play-pause
+        const btnPlay = mkBtn(roomRef.current?.isPlaying ? '⏸' : '▶', 'Play/Pause', 'rgba(0,255,136,0.2)')
+        btnPlay.style.width = '40px'
+        const refreshPlay = () => { btnPlay.innerHTML = roomRef.current?.isPlaying ? '⏸' : '▶' }
+        btnPlay.onclick = () => {
+          const playing = roomRef.current?.isPlaying
+          try { if (playing) ytPlayerRef.current?.pauseVideo?.(); else { ytPlayerRef.current?.unMute?.(); ytPlayerRef.current?.playVideo?.() } } catch {}
+          import('firebase/firestore').then(({updateDoc,doc})=>import('@/lib/firebase').then(({db})=>updateDoc(doc(db,'rooms',roomId),{isPlaying:!playing}).catch(()=>{})))
+        }
+        // ⏩ +10s
+        const btnFwd = mkBtn('⏩', '+10s')
+        btnFwd.onclick = () => { try { const p=ytPlayerRef.current; const d=p?.getDuration?.()||0; const t=(p?.getCurrentTime?.()||0)+10; p?.seekTo?.(d>0?Math.min(d,t):t,true) } catch {} }
+        // 🎤/🔇 lyrics toggle
+        const btnLyr = mkBtn(pipLyricsRef.current ? '🎤' : '🔇', 'Toggle lyrics', pipLyricsRef.current ? 'rgba(249,115,22,0.3)' : 'rgba(255,255,255,0.08)')
+        btnLyr.onclick = () => {
+          const v = !pipLyricsRef.current
+          pipLyricsRef.current = v; setPipLyricsOn(v)
+          btnLyr.innerHTML = v ? '🎤' : '🔇'
+          btnLyr.style.background = v ? 'rgba(249,115,22,0.3)' : 'rgba(255,255,255,0.08)'
+        }
+        bar.append(btnBack, btnPlay, btnFwd, btnLyr)
+        pipWin.document.body.appendChild(bar)
+
         const ctx = canvas.getContext('2d')
-        const drawFrame = makeDrawFrame(ctx)
-        let rafId = null
-        const loop = () => { try { drawFrame() } catch(e) { console.warn('[PiP]',e) }; rafId = pipWin.requestAnimationFrame(loop) }
+        const drawFrame = makeDrawFrame(ctx, H_CANVAS)
+        let rafId = null, lastIsPlaying = null
+        const loop = () => {
+          try { drawFrame(); const np=roomRef.current?.isPlaying; if (np!==lastIsPlaying){lastIsPlaying=np;refreshPlay()} } catch(e){console.warn('[PiP]',e)}
+          rafId = pipWin.requestAnimationFrame(loop)
+        }
         rafId = pipWin.requestAnimationFrame(loop)
         startWatchdog(); setupMediaSession()
         canvasPipIntervalRef.current = {
           cancel: () => {
             try { if (rafId) pipWin.cancelAnimationFrame?.(rafId) } catch {}
-            clearInterval(watchdogInterval)
-            teardownMediaSession()
+            clearInterval(watchdogInterval); teardownMediaSession()
           }
         }
         pipWin.addEventListener('pagehide', () => { canvasPipIntervalRef.current?.cancel?.() }, { once: true })
         toast.success('PiP opened — floats over other apps')
         return
-      } catch(e) { console.warn('[PiP] Document PiP failed, falling back to video PiP', e) }
+      } catch(e) { console.warn('[PiP] Document PiP failed, falling back', e) }
     }
 
     // ════════════════════════════════════════════════════════
     //  FALLBACK: canvas captureStream → hidden video → requestPictureInPicture
-    //  (browser controls window size — min ~320px on Chrome)
     // ════════════════════════════════════════════════════════
-    if (!document.pictureInPictureEnabled) {
-      toast.error('Picture-in-Picture not supported in this browser')
-      return
-    }
+    if (!document.pictureInPictureEnabled) { toast.error('Picture-in-Picture not supported in this browser'); return }
     try {
+      const H = 72
       if (canvasPipRef.current) { try { canvasPipRef.current.remove?.() } catch {} }
       const canvas = document.createElement('canvas')
       canvasPipRef.current = canvas
       canvas.width = W; canvas.height = H
       const ctx = canvas.getContext('2d')
-      const drawFrame = makeDrawFrame(ctx)
+      const drawFrame = makeDrawFrame(ctx, H)
       let rafId = null
-      const loop = () => { try { drawFrame() } catch(e) { console.warn('[PiP]',e) }; rafId = requestAnimationFrame(loop) }
+      const loop = () => { try{drawFrame()}catch(e){console.warn('[PiP]',e)}; rafId=requestAnimationFrame(loop) }
       rafId = requestAnimationFrame(loop)
       startWatchdog(); setupMediaSession()
       if (!videoPipRef.current) {
@@ -1846,13 +1871,7 @@ export default function RoomPage() {
       video.style.width = `${W}px`; video.style.height = `${H}px`
       await video.play()
       await video.requestPictureInPicture()
-      canvasPipIntervalRef.current = {
-        cancel: () => {
-          if (rafId) cancelAnimationFrame(rafId)
-          clearInterval(watchdogInterval)
-          teardownMediaSession()
-        }
-      }
+      canvasPipIntervalRef.current = { cancel: () => { if(rafId)cancelAnimationFrame(rafId); clearInterval(watchdogInterval); teardownMediaSession() } }
       video.addEventListener('leavepictureinpicture', () => { canvasPipIntervalRef.current?.cancel?.() }, { once: true })
       toast.success('PiP opened — floats over other apps')
     } catch { toast.error('Could not open Picture-in-Picture') }
