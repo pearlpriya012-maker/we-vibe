@@ -2461,7 +2461,7 @@ export default function RoomPage() {
 
   // ─── Shared: Watch URL iframe (shown instead of queue player when set) ───
   const watchUrlEl = room.watchUrl ? (
-    <div style={{ position: 'relative', width: '100%', paddingTop: '56.25%', overflow: 'hidden', flexShrink: 0, borderRadius: 8 }}>
+    <div style={{ position: 'relative', width: '100%', paddingTop: '56.25%', overflow: 'hidden', flexShrink: 0, borderRadius: 14 }}>
       <iframe
         src={room.watchUrl}
         allow="autoplay; fullscreen; picture-in-picture"
@@ -2480,8 +2480,8 @@ export default function RoomPage() {
           ? { position: 'fixed', top: 0, left: 0, width: 1, height: 1, opacity: 0.001, pointerEvents: 'none', zIndex: -1 }
           : { position: 'fixed', left: '-2000px', top: '-2000px', width: 320, height: 180, pointerEvents: 'none', zIndex: -1 })
       : (!isMobile && videoFocus)
-        ? { position: 'relative', width: 'min(100%, calc((100vh - 270px) * 1.778))', aspectRatio: '16/9', overflow: 'hidden', flexShrink: 0 }
-        : { position: 'relative', width: '100%', paddingTop: '56.25%', overflow: 'hidden', flexShrink: 0 }
+        ? { position: 'relative', width: 'min(100%, calc((100vh - 270px) * 1.778))', aspectRatio: '16/9', overflow: 'hidden', flexShrink: 0, borderRadius: 14 }
+        : { position: 'relative', width: '100%', paddingTop: '56.25%', overflow: 'hidden', flexShrink: 0, borderRadius: 14 }
     }>
       <YouTube
         ref={playerRef}
@@ -2791,7 +2791,7 @@ export default function RoomPage() {
         )}
 
         {/* Video */}
-        <div style={{ flexShrink: 0, width: '100%', paddingTop: '56.25%', position: 'relative', background: '#000', overflow: 'hidden' }}>
+        <div style={{ flexShrink: 0, width: '100%', paddingTop: '56.25%', position: 'relative', background: '#000', overflow: 'hidden', borderRadius: 14 }}>
           {isYt ? (
             <YouTube
               key={room.watchUrl}
@@ -2936,7 +2936,7 @@ export default function RoomPage() {
           {/* Video area */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
             {/* Video fills remaining height */}
-            <div style={{ flex: 1, position: 'relative', background: '#000', overflow: 'hidden', minHeight: 0 }}>
+            <div style={{ flex: 1, position: 'relative', background: '#000', overflow: 'hidden', minHeight: 0, borderRadius: '0 0 14px 14px' }}>
               {isYt ? (
                 <YouTube
                   key={room.watchUrl}
@@ -3098,7 +3098,7 @@ export default function RoomPage() {
             <>
               {/* Video mode: player + focus button */}
               {!musicMode && (
-                <div style={{ position: 'relative', width: videoFocus ? 'min(100%, calc((100vh - 270px) * 1.778))' : '100%', maxWidth: videoFocus ? undefined : 700, flexShrink: 0, borderRadius: videoFocus ? 4 : 12, overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.8)' }}>
+                <div style={{ position: 'relative', width: videoFocus ? 'min(100%, calc((100vh - 270px) * 1.778))' : '100%', maxWidth: videoFocus ? undefined : 700, flexShrink: 0, borderRadius: videoFocus ? 8 : 14, overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.8)' }}>
                   {ytPlayerEl}
                   <button onClick={() => setVideoFocus(f => !f)} style={{ position: 'absolute', top: 10, right: 10, zIndex: 10, display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(0,0,0,0.65)', border: `1px solid ${videoFocus ? 'rgba(52,152,219,0.7)' : 'rgba(255,255,255,0.25)'}`, borderRadius: 8, padding: '5px 12px', cursor: 'pointer', fontFamily: 'Oswald', color: videoFocus ? 'var(--cyan)' : '#fff', fontSize: '0.72rem', letterSpacing: '0.1em', transition: 'all 0.2s', backdropFilter: 'blur(4px)' }}>
                     {videoFocus ? '✕ EXIT FOCUS' : '⛶ FOCUS'}
