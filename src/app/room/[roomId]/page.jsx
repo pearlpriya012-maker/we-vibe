@@ -2828,6 +2828,14 @@ export default function RoomPage() {
                   onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.1)'}
                   onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
                 >{room.watchIsPlaying ? '⏸' : '▶'}</button>
+                {/* ◀10 */}
+                <button onClick={() => { const t = Math.max(0, watchGetTime() - 10); watchSeek(t); updateWatchPlayback(roomId, { watchCurrentTime: t, watchUpdatedAt: Date.now() }) }}
+                  style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.2)', cursor: 'pointer', color: 'var(--cyan)', fontSize: '0.7rem', fontFamily: 'Oswald', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, letterSpacing: '-0.02em' }}
+                  title="Back 10s">◀10</button>
+                {/* 10▶ */}
+                <button onClick={() => { const t = watchGetTime() + 10; watchSeek(t); updateWatchPlayback(roomId, { watchCurrentTime: t, watchUpdatedAt: Date.now() }) }}
+                  style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.2)', cursor: 'pointer', color: 'var(--cyan)', fontSize: '0.7rem', fontFamily: 'Oswald', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, letterSpacing: '-0.02em' }}
+                  title="Forward 10s">10▶</button>
                 <span style={{ fontFamily: 'Oswald', fontSize: '0.72rem', color: 'var(--cyan)', flexShrink: 0, minWidth: 36 }}>{fmtTime(watchTime)}</span>
                 <input type="range" min="0" max="7200" value={watchTime}
                   onChange={e => { setWatchTime(+e.target.value) }}
@@ -2971,6 +2979,14 @@ export default function RoomPage() {
                       onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.1)'}
                       onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
                     >{room.watchIsPlaying ? '⏸' : '▶'}</button>
+                    {/* ◀10 */}
+                    <button onClick={() => { const t = Math.max(0, watchGetTime() - 10); watchSeek(t); updateWatchPlayback(roomId, { watchCurrentTime: t, watchUpdatedAt: Date.now() }) }}
+                      style={{ width: 34, height: 34, borderRadius: 8, background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.2)', cursor: 'pointer', color: 'var(--cyan)', fontSize: '0.72rem', fontFamily: 'Oswald', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, letterSpacing: '-0.02em' }}
+                      title="Back 10s">◀10</button>
+                    {/* 10▶ */}
+                    <button onClick={() => { const t = watchGetTime() + 10; watchSeek(t); updateWatchPlayback(roomId, { watchCurrentTime: t, watchUpdatedAt: Date.now() }) }}
+                      style={{ width: 34, height: 34, borderRadius: 8, background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.2)', cursor: 'pointer', color: 'var(--cyan)', fontSize: '0.72rem', fontFamily: 'Oswald', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, letterSpacing: '-0.02em' }}
+                      title="Forward 10s">10▶</button>
                     <span style={{ fontFamily: 'Oswald', fontSize: '0.8rem', color: 'var(--cyan)', flexShrink: 0, minWidth: 42 }}>{fmtTime(watchTime)}</span>
                     <input type="range" min="0" max="7200" value={watchTime}
                       onChange={e => setWatchTime(+e.target.value)}
