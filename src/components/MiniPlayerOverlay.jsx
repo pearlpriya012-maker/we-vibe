@@ -46,9 +46,8 @@ function useDraggableResizable(defaultW, defaultH) {
   return { pos, size, dragRef, bindDrag, bindResize };
 }
 
-export default function MiniPlayerOverlay({ visible, onClose, renderContent, defaultW = 400, defaultH = 88 }) {
+export default function MiniPlayerOverlay({ renderContent, defaultW = 400, defaultH = 88 }) {
   const { pos, size, dragRef, bindDrag, bindResize } = useDraggableResizable(defaultW, defaultH);
-  if (!visible) return null;
   return (
     <div style={{
       position: 'fixed',
@@ -64,12 +63,9 @@ export default function MiniPlayerOverlay({ visible, onClose, renderContent, def
       transition: 'box-shadow 0.2s',
       display: 'flex', flexDirection: 'column',
     }}>
-      <div {...bindDrag} ref={dragRef} style={{ cursor: 'move', height: 28, background: 'rgba(30,30,40,0.92)', display: 'flex', alignItems: 'center', padding: '0 12px', fontWeight: 600, fontSize: 14, color: '#fff', borderBottom: '1px solid #222' }}>
-        Mini Player
-        <button onClick={onClose} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#fff', fontSize: 18, cursor: 'pointer' }}>&times;</button>
-      </div>
-      <div style={{ flex: 1, position: 'relative', background: 'transparent', width: '100%', height: size.h - 28 }}>
-        {renderContent && renderContent(size.w, size.h - 28)}
+      <div {...bindDrag} ref={dragRef} style={{ cursor: 'move', height: 16, background: 'rgba(30,30,40,0.92)', borderBottom: '1px solid #222' }} />
+      <div style={{ flex: 1, position: 'relative', background: 'transparent', width: '100%', height: size.h - 16 }}>
+        {renderContent && renderContent(size.w, size.h - 16)}
       </div>
       <div {...bindResize} style={{ position: 'absolute', right: 2, bottom: 2, width: 18, height: 18, cursor: 'nwse-resize', zIndex: 10 }}>
         <svg width="18" height="18"><polyline points="3,15 15,15 15,3" fill="none" stroke="#888" strokeWidth="2"/></svg>

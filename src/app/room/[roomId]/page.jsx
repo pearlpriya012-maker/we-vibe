@@ -1,43 +1,39 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import Link from 'next/link'
-import toast from 'react-hot-toast'
-import YouTube from 'react-youtube'
-import { useAuth } from '@/context/AuthContext'
-import {
-  subscribeToRoom, subscribeToMessages,
-  updatePlayback, addToQueue, addManyToQueue, removeFromQueue, reorderQueue,
-  setCurrentTrack, skipToNext, leaveRoom,
-  sendMessage, addReaction, toggleParticipantQueueAccess, toggleParticipantFullControl,
-  kickParticipant, updateMusicMode, updateWatchPlayback, updateParticipantWatchTime,
-} from '@/lib/rooms'
 import dynamic from 'next/dynamic'
 const MiniPlayerOverlay = dynamic(() => import('@/components/MiniPlayerOverlay'), { ssr: false })
 
-function Avatar({ user, size = 32 }) {
-  if (user?.photoURL) return <img src={user.photoURL} alt="" style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--border)', flexShrink: 0 }} />
+export default function RoomPage() {
+  // ...existing code...
+  const [showLyrics, setShowLyrics] = useState(true)
+  const miniPlayerCanvasRef = useRef(null)
+
+  // Render your animated canvas (with/without lyrics) into the overlay
+  useEffect(() => {
+    // Place your canvas drawing logic here, targeting miniPlayerCanvasRef.current
+    // Use showLyrics to control lyrics rendering
+    // ...
+  }, [showLyrics /*, ...other dependencies */])
+
   return (
-    <div style={{ width: size, height: size, borderRadius: '50%', background: 'linear-gradient(135deg,var(--green),var(--cyan))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Oswald', fontWeight: 700, fontSize: size * 0.38, color: '#000', flexShrink: 0 }}>
-      {(user?.displayName || 'V').charAt(0).toUpperCase()}
-    </div>
+    <>
+      {/* ...existing app UI... */}
+      <MiniPlayerOverlay
+        renderContent={(w, h) => (
+          <>
+            <canvas ref={miniPlayerCanvasRef} width={w} height={h} style={{ width: w, height: h, display: 'block' }} />
+            <button onClick={() => setShowLyrics(v => !v)} style={{ position: 'absolute', top: 8, right: 8, zIndex: 10, background: '#222', color: '#fff', border: 'none', borderRadius: 16, padding: '4px 12px', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+              {showLyrics ? 'Hide Lyrics' : 'Show Lyrics'}
+            </button>
+          </>
+        )}
+        defaultW={showLyrics ? 400 : 88}
+        defaultH={88}
+      />
+    </>
   )
 }
-
-// ─── Music Visualizer ───
-function MusicVisualizer({ track, isPlaying, compact = false }) {
-  if (compact) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: 1.5, height: 24, flexShrink: 0, background: '#000', borderRadius: 4, padding: '0 3px' }}>
-        {Array.from({ length: 7 }).map((_, i) => (
-          <div key={i} style={{ width: 3, borderRadius: 2, background: 'linear-gradient(to bottom, #ff1f6d, #f97316 48%, #0ea5e9)', animation: isPlaying ? `mobileBar2 ${0.28 + i * 0.09}s ease-in-out ${i * 0.07}s infinite alternate` : 'none', height: isPlaying ? `${30 + i * 8}%` : '15%', transition: 'height 0.3s', boxShadow: isPlaying ? '0 0 5px rgba(249,115,22,0.7)' : 'none' }} />
-        ))}
-        <style>{`@keyframes mobileBar2 { from{height:10%} to{height:100%} }`}</style>
-      </div>
-    )
-  }
-  return (
-    <div style={{ width: '100%', maxWidth: 420, position: 'relative', borderRadius: 24, overflow: 'hidden', boxShadow: '0 24px 80px rgba(0,0,0,0.9), 0 0 80px rgba(0,255,136,0.06)', aspectRatio: '1/1', background: '#000', flexShrink: 0 }}>
       {/* Blurred background */}
       <img src={track.thumbnail} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(28px) brightness(0.3) saturate(1.6)', transform: 'scale(1.12)' }} />
       {/* Radial vignette */}
@@ -2124,7 +2120,7 @@ export default function RoomPage() {
               iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'playVideo', args: [] }), '*')
           } catch {}
         } else {
-          // Tab coming back to foreground — if room says playing, sync the player
+          // Tab came back to foreground — if room says playing, sync the player
           // (retries that fired while hidden were blocked, so kick again now)
           try {
             if (roomRef.current?.isPlaying) {
@@ -2140,8 +2136,7 @@ export default function RoomPage() {
       document.addEventListener('visibilitychange', onVisibilityChange)
 
       // Boost audio & unmute every 1 s while tab is hidden.
-      // Also update mediaSession here — rAF (drawFrame) is suspended when hidden
-      // so mediaSession.playbackState/metadata must be kept fresh from this interval.
+      // Also update mediaSession here — rAF (drawFrame) is suspended when hidden so we must do it here
       const origWatchdog = watchdogInterval
       const forceUnmute = () => {
         try {
@@ -2168,7 +2163,7 @@ export default function RoomPage() {
           const p = ytPlayerRef.current
           if (!p) return
           const state = p.getPlayerState?.()
-          // Always unmute via API + postMessage (Chrome can mute new videos at browser level)
+          // Always unmute via API + postMessage (Chrome can mute new video loads at browser level)
           p.unMute?.()
           p.setVolume?.(100)
           forceUnmute()
@@ -2524,7 +2519,7 @@ export default function RoomPage() {
   if (!room) return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 16 }}>
       <div className="grid-bg" />
-      <div style={{ fontFamily: 'Oswald', fontSize: '1.5rem', color: 'var(--pink)' }}>Room Not Found</div>
+      <div style={{ fontSize: '1.5rem', marginBottom: 8 }}>Room Not Found</div>
       <Link href="/dashboard" className="btn-primary">Back to Dashboard</Link>
     </div>
   )
@@ -2763,7 +2758,7 @@ export default function RoomPage() {
             />
             <button type="submit" style={{ flexShrink: 0, background: 'var(--cyan)', border: 'none', borderRadius: 8, padding: '6px 12px', color: '#000', fontFamily: 'Oswald', fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer', letterSpacing: '0.06em' }}>GO</button>
             {!isYt && (
-              <button type="button" onClick={() => setWatchCrop(c => !c)} title="Crop to video only" style={{ flexShrink: 0, background: watchCrop ? 'rgba(0,200,255,0.15)' : 'rgba(255,255,255,0.05)', border: `1px solid ${watchCrop ? 'rgba(0,200,255,0.4)' : 'rgba(255,255,255,0.15)'}`, borderRadius: 8, padding: '8px 12px', color: watchCrop ? 'var(--cyan)' : 'var(--text-dim)', cursor: 'pointer', fontSize: '0.8rem' }}>✂️ {watchCrop ? 'Cropped' : 'Crop'}</button>
+              <button type="button" onClick={() => setWatchCrop(c => !c)} title="Crop to video only" style={{ flexShrink: 0, background: watchCrop ? 'rgba(0,200,255,0.15)' : 'rgba(255,255,255,0.05)', border: `1px solid ${watchCrop ? 'rgba(0,200,255,0.4)' : 'rgba(255,255,255,0.1)'}`, borderRadius: 8, padding: '8px 12px', color: watchCrop ? 'var(--cyan)' : 'var(--text-dim)', cursor: 'pointer', fontSize: '0.8rem' }}>✂️ {watchCrop ? 'Cropped' : 'Crop'}</button>
             )}
           </form>
         )}
