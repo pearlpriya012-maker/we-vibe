@@ -1560,72 +1560,69 @@ export default function RoomPage() {
     } catch {}
   }
 
-  // ─── Video Picture-in-Picture mini player ───────────────────────────────
-  // Draws track info onto a canvas → pipes into a hidden <video> →
-  // requestPictureInPicture() → floats over ALL apps (Android Chrome, desktop Chrome).
-  // Sizes: 72×72 (no lyrics) · 300×72 (with lyrics)
+  // ─── Picture-in-Picture mini player ─────────────────────────────────────
+  // Primary: Document PiP API (Chrome 116+) — opens exact-sized always-on-top popup.
+  // Fallback: canvas captureStream → video.requestPictureInPicture() (aspect-ratio only).
+  // Sizes: 96×96 (no lyrics) · 260×72 (with lyrics)
   async function openMobilePip() {
-    if (!('pictureInPictureEnabled' in document) || !document.pictureInPictureEnabled) {
-      toast.error('Picture-in-Picture not supported in this browser')
-      return
-    }
-    // Toggle off if already in PiP
+    const withLyrics = pipLyricsRef.current
+    const W = withLyrics ? 260 : 96, H = withLyrics ? 72 : 96
+
+    // ── Toggle off ──
+    try {
+      if (window.documentPictureInPicture?.window && !window.documentPictureInPicture.window.closed) {
+        window.documentPictureInPicture.window.close()
+        canvasPipIntervalRef.current?.cancel?.()
+        return
+      }
+    } catch {}
     if (document.pictureInPictureElement) {
       await document.exitPictureInPicture().catch(() => {})
       canvasPipIntervalRef.current?.cancel?.()
       return
     }
+
     initAudioKeepAlive()
-    try {
-      // ── Canvas setup ──
-      if (canvasPipRef.current) { try { canvasPipRef.current.remove?.() } catch {} }
-      const canvas = document.createElement('canvas')
-      canvasPipRef.current = canvas
-      const withLyrics = pipLyricsRef.current
-      const W = withLyrics ? 200 : 48, H = withLyrics ? 52 : 48
-      canvas.width = W; canvas.height = H
-      const ctx = canvas.getContext('2d')
 
-      // ── Animation state ──
-      const anim = { frame: 0, thumbImg: null, lastTrackId: null, skipFired: false, accent: [249, 115, 22] }
+    // ── Shared state ──
+    const anim = { frame: 0, thumbImg: null, lastTrackId: null, skipFired: false, accent: [249, 115, 22] }
 
-      function loadThumb(url) {
-        const img = new window.Image()
-        img.crossOrigin = 'anonymous'
-        img.onload = () => {
-          anim.thumbImg = img
-          try {
-            const sc = document.createElement('canvas'); sc.width = 16; sc.height = 16
-            const sx = sc.getContext('2d'); sx.drawImage(img, 0, 0, 16, 16)
-            const d = sx.getImageData(0, 0, 16, 16).data
-            let r = 0, g = 0, b = 0, cnt = 0
-            for (let j = 0; j < d.length; j += 4) {
-              const br = (d[j] + d[j+1] + d[j+2]) / 3
-              if (br < 20 || br > 235) continue
-              r += d[j]; g += d[j+1]; b += d[j+2]; cnt++
-            }
-            if (cnt > 0) {
-              r = Math.round(r/cnt); g = Math.round(g/cnt); b = Math.round(b/cnt)
-              const avg = (r+g+b)/3, boost = 1.8
-              r = Math.min(255, Math.max(0, Math.round(avg + (r-avg)*boost)))
-              g = Math.min(255, Math.max(0, Math.round(avg + (g-avg)*boost)))
-              b = Math.min(255, Math.max(0, Math.round(avg + (b-avg)*boost)))
-              anim.accent = [r, g, b]
-            }
-          } catch { anim.accent = [249, 115, 22] }
-        }
-        img.onerror = () => { anim.thumbImg = null }
-        img.src = url
+    function loadThumb(url) {
+      const img = new window.Image()
+      img.crossOrigin = 'anonymous'
+      img.onload = () => {
+        anim.thumbImg = img
+        try {
+          const sc = document.createElement('canvas'); sc.width = 16; sc.height = 16
+          const sx = sc.getContext('2d'); sx.drawImage(img, 0, 0, 16, 16)
+          const d = sx.getImageData(0, 0, 16, 16).data
+          let r = 0, g = 0, b = 0, cnt = 0
+          for (let j = 0; j < d.length; j += 4) {
+            const br = (d[j]+d[j+1]+d[j+2])/3
+            if (br < 20 || br > 235) continue
+            r += d[j]; g += d[j+1]; b += d[j+2]; cnt++
+          }
+          if (cnt > 0) {
+            r = Math.round(r/cnt); g = Math.round(g/cnt); b = Math.round(b/cnt)
+            const avg = (r+g+b)/3, boost = 1.8
+            r = Math.min(255,Math.max(0,Math.round(avg+(r-avg)*boost)))
+            g = Math.min(255,Math.max(0,Math.round(avg+(g-avg)*boost)))
+            b = Math.min(255,Math.max(0,Math.round(avg+(b-avg)*boost)))
+            anim.accent = [r,g,b]
+          }
+        } catch { anim.accent = [249,115,22] }
       }
+      img.onerror = () => { anim.thumbImg = null }
+      img.src = url
+    }
 
-      function fmt(s) { if (!s || !isFinite(s)) return '0:00'; return `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}` }
-
-      function drawFrame() {
+    // ── Canvas draw factory (same logic regardless of which PiP type is used) ──
+    function makeDrawFrame(ctx) {
+      return function drawFrame() {
         anim.frame++
         const liveRoom = roomRef.current
         const track = liveRoom?.currentTrack
         const playing = liveRoom?.isPlaying
-
         if (track?.videoId !== anim.lastTrackId) {
           anim.lastTrackId = track?.videoId || null
           anim.thumbImg = null; anim.skipFired = false
@@ -1634,145 +1631,122 @@ export default function RoomPage() {
             if ('mediaSession' in navigator && track) {
               navigator.mediaSession.metadata = new MediaMetadata({
                 title: track.title || 'We Vibe',
-                artist: (track.channelTitle || '').replace(/\s*-\s*Topic$/i, '').trim(),
-                artwork: track.thumbnail ? [{ src: track.thumbnail }] : [],
+                artist: (track.channelTitle||'').replace(/\s*-\s*Topic$/i,'').trim(),
+                artwork: track.thumbnail ? [{src:track.thumbnail}] : [],
               })
             }
           } catch {}
         }
         try { if ('mediaSession' in navigator) navigator.mediaSession.playbackState = playing ? 'playing' : 'paused' } catch {}
-
         let ct = 0, dur = 0
-        try { const p = ytPlayerRef.current; ct = p?.getCurrentTime?.() ?? 0; dur = p?.getDuration?.() ?? 0 } catch {}
-        const pct = dur > 0 ? Math.min(1, ct / dur) : 0
-
-        const [ar, ag, ab] = anim.accent
-        const accentRGB = `rgb(${ar},${ag},${ab})`
-
-        // ── Background: blurred album art ──
+        try { const p = ytPlayerRef.current; ct = p?.getCurrentTime?.()??0; dur = p?.getDuration?.()??0 } catch {}
+        const pct = dur > 0 ? Math.min(1, ct/dur) : 0
+        const [ar,ag,ab] = anim.accent, accentRGB = `rgb(${ar},${ag},${ab})`
+        // Background
         if (anim.thumbImg) {
           ctx.filter = 'blur(14px) brightness(0.28) saturate(2)'
-          ctx.drawImage(anim.thumbImg, -10, -10, W+20, H+20)
+          ctx.drawImage(anim.thumbImg, -8, -8, W+16, H+16)
           ctx.filter = 'none'
-        } else {
-          ctx.fillStyle = '#0a0a12'; ctx.fillRect(0, 0, W, H)
-        }
-        ctx.fillStyle = 'rgba(0,0,0,0.42)'; ctx.fillRect(0, 0, W, H)
-
+        } else { ctx.fillStyle = '#0a0a12'; ctx.fillRect(0,0,W,H) }
+        ctx.fillStyle = 'rgba(0,0,0,0.42)'; ctx.fillRect(0,0,W,H)
         const trunc = (s, maxW) => {
           if (ctx.measureText(s).width <= maxW) return s
-          let t = s; while (t.length > 1 && ctx.measureText(t+'…').width > maxW) t = t.slice(0,-1); return t+'…'
+          let t = s; while (t.length>1 && ctx.measureText(t+'…').width>maxW) t=t.slice(0,-1); return t+'…'
         }
         const drawThumb = (x, y, sz) => {
           ctx.save(); ctx.beginPath()
-          if (ctx.roundRect) ctx.roundRect(x, y, sz, sz, 5); else ctx.rect(x, y, sz, sz)
+          if (ctx.roundRect) ctx.roundRect(x,y,sz,sz,6); else ctx.rect(x,y,sz,sz)
           ctx.clip()
           if (anim.thumbImg) {
-            const iw = anim.thumbImg.naturalWidth || anim.thumbImg.width
-            const ih = anim.thumbImg.naturalHeight || anim.thumbImg.height
-            let sx = 0, sy = 0, sw = iw, sh = ih
-            if (iw/ih > 1) { sw = ih; sx = (iw-sw)/2 } else { sh = iw; sy = (ih-sh)/2 }
-            ctx.drawImage(anim.thumbImg, sx, sy, sw, sh, x, y, sz, sz)
+            const iw = anim.thumbImg.naturalWidth||anim.thumbImg.width
+            const ih = anim.thumbImg.naturalHeight||anim.thumbImg.height
+            let sx=0,sy=0,sw=iw,sh=ih
+            if (iw/ih>1){sw=ih;sx=(iw-sw)/2}else{sh=iw;sy=(ih-sh)/2}
+            ctx.drawImage(anim.thumbImg,sx,sy,sw,sh,x,y,sz,sz)
           } else {
-            ctx.fillStyle = '#1a1a2e'; ctx.fillRect(x, y, sz, sz)
-            ctx.fillStyle = accentRGB; ctx.font = `${Math.round(sz*0.38)}px system-ui`
-            ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('♫', x+sz/2, y+sz/2)
+            ctx.fillStyle='#1a1a2e'; ctx.fillRect(x,y,sz,sz)
+            ctx.fillStyle=accentRGB; ctx.font=`${Math.round(sz*0.38)}px system-ui`
+            ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('♫',x+sz/2,y+sz/2)
           }
           ctx.restore()
-          ctx.strokeStyle = `rgba(${ar},${ag},${ab},0.45)`; ctx.lineWidth = 1
-          if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(x, y, sz, sz, 5); ctx.stroke() }
+          ctx.strokeStyle=`rgba(${ar},${ag},${ab},0.4)`; ctx.lineWidth=1
+          if (ctx.roundRect){ctx.beginPath();ctx.roundRect(x,y,sz,sz,6);ctx.stroke()}
         }
-
         if (!withLyrics) {
-          // ── 48×48: album art square, progress sliver, pulse dot ──
-          const sz = 40, ax = (W-sz)/2, ay = 3
-          drawThumb(ax, ay, sz)
-          const g = ctx.createLinearGradient(0, 32, 0, H)
-          g.addColorStop(0,'rgba(0,0,0,0)'); g.addColorStop(1,'rgba(0,0,0,0.85)')
-          ctx.fillStyle = g; ctx.fillRect(0, 32, W, H-32)
-          ctx.font = 'bold 6px system-ui'; ctx.textAlign = 'center'; ctx.fillStyle = '#fff'
-          ctx.fillText(trunc(track?.title||'♫', W-4), W/2, 46)
-          // progress sliver
-          ctx.fillStyle = 'rgba(255,255,255,0.1)'; ctx.fillRect(0, H-2, W, 2)
-          ctx.fillStyle = accentRGB; ctx.fillRect(0, H-2, W*pct, 2)
-          // pulse dot
+          // 96×96: album art fills most, title strip at bottom
+          const sz=80, ax=(W-sz)/2, ay=4
+          drawThumb(ax,ay,sz)
+          const gr=ctx.createLinearGradient(0,60,0,H)
+          gr.addColorStop(0,'rgba(0,0,0,0)'); gr.addColorStop(1,'rgba(0,0,0,0.92)')
+          ctx.fillStyle=gr; ctx.fillRect(0,60,W,H-60)
+          ctx.font='bold 9px system-ui'; ctx.textAlign='center'; ctx.fillStyle='#fff'; ctx.textBaseline='alphabetic'
+          ctx.fillText(trunc(track?.title||'♫',W-8),W/2,H-7)
+          ctx.fillStyle='rgba(255,255,255,0.1)'; ctx.fillRect(0,H-2,W,2)
+          ctx.fillStyle=accentRGB; ctx.fillRect(0,H-2,W*pct,2)
           if (playing) {
-            const p2 = 0.5 + 0.5*Math.sin(anim.frame*0.15)
-            ctx.shadowColor = accentRGB; ctx.shadowBlur = 3
-            ctx.beginPath(); ctx.arc(W-5, 5, 2, 0, Math.PI*2)
-            ctx.fillStyle = `rgba(${ar},${ag},${ab},${p2.toFixed(2)})`; ctx.fill()
-            ctx.shadowBlur = 0; ctx.shadowColor = 'transparent'
+            const p2=0.5+0.5*Math.sin(anim.frame*0.15)
+            ctx.shadowColor=accentRGB; ctx.shadowBlur=4
+            ctx.beginPath(); ctx.arc(W-7,7,3,0,Math.PI*2)
+            ctx.fillStyle=`rgba(${ar},${ag},${ab},${p2.toFixed(2)})`; ctx.fill()
+            ctx.shadowBlur=0; ctx.shadowColor='transparent'
           }
         } else {
-          // ── 200×52: 44×44 album art left + info right ──
-          const sz = 44, sqX = 3, sqY = 4
-          drawThumb(sqX, sqY, sz)
-          const txX = sqX + sz + 5, txW = W - txX - 4
-          const title = track?.title || 'Nothing playing'
-          const artist = (track?.channelTitle||'').replace(/\s*-\s*Topic$/i,'').trim()
-          ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left'
-          ctx.font = 'bold 8px system-ui'; ctx.fillStyle = '#fff'
-          ctx.fillText(trunc(title, txW), txX, 13)
-          ctx.font = '7px system-ui'; ctx.fillStyle = 'rgba(255,255,255,0.5)'
-          ctx.fillText(trunc(artist, txW), txX, 23)
-          // Lyrics line
-          const lyrSnap = lyricsRef.current
-          const hasSync = lyrSnap?.synced && lyrSnap?.lines?.length > 0
-          const plainText = !hasSync && lyrSnap?.plain ? lyrSnap.plain : null
+          // 260×72: 58×58 album art left + info right
+          const sz=58, sqX=7, sqY=7
+          drawThumb(sqX,sqY,sz)
+          const txX=sqX+sz+8, txW=W-txX-6
+          const title=track?.title||'Nothing playing'
+          const artist=(track?.channelTitle||'').replace(/\s*-\s*Topic$/i,'').trim()
+          ctx.textBaseline='alphabetic'; ctx.textAlign='left'
+          ctx.font='bold 10px system-ui'; ctx.fillStyle='#fff'
+          ctx.fillText(trunc(title,txW),txX,18)
+          ctx.font='9px system-ui'; ctx.fillStyle='rgba(255,255,255,0.5)'
+          ctx.fillText(trunc(artist,txW),txX,30)
+          const lyrSnap=lyricsRef.current
+          const hasSync=lyrSnap?.synced&&lyrSnap?.lines?.length>0
+          const plainText=!hasSync&&lyrSnap?.plain?lyrSnap.plain:null
           if (hasSync) {
-            const lines = lyrSnap.lines
-            const ai = lines.reduce((best,l,i) => l.time <= ct ? i : best, 0)
-            ctx.font = 'bold 8px system-ui'; ctx.fillStyle = accentRGB
-            ctx.fillText(trunc(lines[ai].text, txW), txX, 34)
-            if (lines[ai+1]) { ctx.font = '7px system-ui'; ctx.fillStyle = `rgba(${ar},${ag},${ab},0.6)`; ctx.fillText(trunc(lines[ai+1].text, txW), txX, 44) }
-          } else if (plainText?.trim().length > 4) {
-            const pl = plainText.split('\n').map(l=>l.trim()).filter(l=>l)
-            const pi = dur > 5 ? Math.min(pl.length-1, Math.floor((ct/dur)*pl.length)) : 0
-            ctx.font = 'bold 8px system-ui'; ctx.fillStyle = accentRGB
-            ctx.fillText(trunc(pl[pi]||'', txW), txX, 34)
-            if (pl[pi+1]) { ctx.font = '7px system-ui'; ctx.fillStyle = `rgba(${ar},${ag},${ab},0.6)`; ctx.fillText(trunc(pl[pi+1], txW), txX, 44) }
+            const lines=lyrSnap.lines
+            const ai=lines.reduce((best,l,i)=>l.time<=ct?i:best,0)
+            ctx.font='bold 10px system-ui'; ctx.fillStyle=accentRGB
+            ctx.fillText(trunc(lines[ai].text,txW),txX,46)
+            if (lines[ai+1]){ctx.font='8px system-ui';ctx.fillStyle=`rgba(${ar},${ag},${ab},0.6)`;ctx.fillText(trunc(lines[ai+1].text,txW),txX,58)}
+          } else if (plainText?.trim().length>4) {
+            const pl=plainText.split('\n').map(l=>l.trim()).filter(l=>l)
+            const pi=dur>5?Math.min(pl.length-1,Math.floor((ct/dur)*pl.length)):0
+            ctx.font='bold 10px system-ui'; ctx.fillStyle=accentRGB
+            ctx.fillText(trunc(pl[pi]||'',txW),txX,46)
+            if (pl[pi+1]){ctx.font='8px system-ui';ctx.fillStyle=`rgba(${ar},${ag},${ab},0.6)`;ctx.fillText(trunc(pl[pi+1],txW),txX,58)}
           } else {
-            ctx.font = '7px system-ui'; ctx.fillStyle = 'rgba(255,255,255,0.25)'
-            ctx.fillText('No lyrics', txX, 34)
+            ctx.font='9px system-ui'; ctx.fillStyle='rgba(255,255,255,0.25)'
+            ctx.fillText('No lyrics',txX,46)
           }
-          // progress bar only (no time text — too small)
-          ctx.fillStyle = 'rgba(255,255,255,0.1)'; ctx.fillRect(0, H-2, W, 2)
-          ctx.fillStyle = accentRGB; ctx.fillRect(0, H-2, W*pct, 2)
-          // pulse dot
+          ctx.fillStyle='rgba(255,255,255,0.1)'; ctx.fillRect(0,H-2,W,2)
+          ctx.fillStyle=accentRGB; ctx.fillRect(0,H-2,W*pct,2)
           if (playing) {
-            const p2 = 0.5 + 0.5*Math.sin(anim.frame*0.15)
-            ctx.shadowColor = accentRGB; ctx.shadowBlur = 3
-            ctx.beginPath(); ctx.arc(W-5, 5, 2, 0, Math.PI*2)
-            ctx.fillStyle = `rgba(${ar},${ag},${ab},${p2.toFixed(2)})`; ctx.fill()
-            ctx.shadowBlur = 0; ctx.shadowColor = 'transparent'
+            const p2=0.5+0.5*Math.sin(anim.frame*0.15)
+            ctx.shadowColor=accentRGB; ctx.shadowBlur=4
+            ctx.beginPath(); ctx.arc(W-7,7,3,0,Math.PI*2)
+            ctx.fillStyle=`rgba(${ar},${ag},${ab},${p2.toFixed(2)})`; ctx.fill()
+            ctx.shadowBlur=0; ctx.shadowColor='transparent'
           }
         }
       }
+    }
 
-      // ── rAF loop ──
-      let rafId = null
-      function loop() { try { drawFrame() } catch(e) { console.warn('[PiP]',e) }; rafId = requestAnimationFrame(loop) }
-      rafId = requestAnimationFrame(loop)
-
-      // ── Watchdog: runs even when tab is hidden ──
-      const watchdogInterval = setInterval(() => {
+    // ── Watchdog (auto-advance when tab hidden) ──
+    let watchdogInterval = null
+    function startWatchdog() {
+      watchdogInterval = setInterval(() => {
         const liveId = roomRef.current?.currentTrack?.videoId || null
         if (liveId !== anim.lastTrackId) {
           anim.lastTrackId = liveId; anim.skipFired = false
           if (roomRef.current?.currentTrack?.thumbnail) loadThumb(roomRef.current.currentTrack.thumbnail)
-          try {
-            const t = roomRef.current?.currentTrack
-            if ('mediaSession' in navigator && t) {
-              navigator.mediaSession.metadata = new MediaMetadata({ title: t.title||'We Vibe', artist: (t.channelTitle||'').replace(/\s*-\s*Topic$/i,'').trim(), artwork: t.thumbnail?[{src:t.thumbnail}]:[] })
-              navigator.mediaSession.playbackState = 'playing'
-            }
-          } catch {}
           return
         }
         if (!anim.skipFired) {
           try {
-            const ytS = window.YT?.PlayerState
-            const st = ytPlayerRef.current?.getPlayerState?.()
+            const ytS = window.YT?.PlayerState, st = ytPlayerRef.current?.getPlayerState?.()
             if (ytS && st === ytS.ENDED) {
               anim.skipFired = true
               if (Date.now() - lastSkipAtRef.current < 4000) return
@@ -1783,8 +1757,82 @@ export default function RoomPage() {
           } catch {}
         }
       }, 1000)
+    }
 
-      // ── Wire canvas → video ──
+    // ── Media Session ──
+    function setupMediaSession() {
+      if (!('mediaSession' in navigator)) return
+      try {
+        navigator.mediaSession.setActionHandler('play', () => {
+          if (roomRef.current) roomRef.current = {...roomRef.current, isPlaying: true}
+          navigator.mediaSession.playbackState = 'playing'
+          const tryPlay = () => { try { ytPlayerRef.current?.unMute?.(); ytPlayerRef.current?.setVolume?.(100); ytPlayerRef.current?.playVideo?.() } catch {} }
+          tryPlay(); [300,700,1400].forEach(d => setTimeout(tryPlay, d))
+          import('firebase/firestore').then(({updateDoc,doc})=>import('@/lib/firebase').then(({db})=>updateDoc(doc(db,'rooms',roomId),{isPlaying:true}).catch(()=>{})))
+        })
+        navigator.mediaSession.setActionHandler('pause', () => {
+          if (roomRef.current) roomRef.current = {...roomRef.current, isPlaying: false}
+          navigator.mediaSession.playbackState = 'paused'
+          try { ytPlayerRef.current?.pauseVideo?.() } catch {}
+          import('firebase/firestore').then(({updateDoc,doc})=>import('@/lib/firebase').then(({db})=>updateDoc(doc(db,'rooms',roomId),{isPlaying:false}).catch(()=>{})))
+        })
+        navigator.mediaSession.setActionHandler('nexttrack', () => { try { if (roomRef.current?.hostId===user?.uid) skipToNext(roomId).catch(()=>{}) } catch {} })
+      } catch {}
+    }
+    function teardownMediaSession() {
+      try { if ('mediaSession' in navigator) { navigator.mediaSession.setActionHandler('play',null); navigator.mediaSession.setActionHandler('pause',null); navigator.mediaSession.setActionHandler('nexttrack',null) } } catch {}
+    }
+
+    // ════════════════════════════════════════════════════════
+    //  PRIMARY: Document Picture-in-Picture (Chrome 116+)
+    //  Opens a real popup window at EXACT pixel dimensions.
+    // ════════════════════════════════════════════════════════
+    if ('documentPictureInPicture' in window) {
+      try {
+        const pipWin = await window.documentPictureInPicture.requestWindow({ width: W, height: H })
+        pipWin.document.body.style.cssText = `margin:0;padding:0;overflow:hidden;background:#000;`
+        const canvas = pipWin.document.createElement('canvas')
+        canvas.width = W; canvas.height = H
+        canvas.style.cssText = `display:block;width:${W}px;height:${H}px;`
+        pipWin.document.body.appendChild(canvas)
+        const ctx = canvas.getContext('2d')
+        const drawFrame = makeDrawFrame(ctx)
+        let rafId = null
+        const loop = () => { try { drawFrame() } catch(e) { console.warn('[PiP]',e) }; rafId = pipWin.requestAnimationFrame(loop) }
+        rafId = pipWin.requestAnimationFrame(loop)
+        startWatchdog(); setupMediaSession()
+        canvasPipIntervalRef.current = {
+          cancel: () => {
+            try { if (rafId) pipWin.cancelAnimationFrame?.(rafId) } catch {}
+            clearInterval(watchdogInterval)
+            teardownMediaSession()
+          }
+        }
+        pipWin.addEventListener('pagehide', () => { canvasPipIntervalRef.current?.cancel?.() }, { once: true })
+        toast.success('PiP opened — floats over other apps')
+        return
+      } catch(e) { console.warn('[PiP] Document PiP failed, falling back to video PiP', e) }
+    }
+
+    // ════════════════════════════════════════════════════════
+    //  FALLBACK: canvas captureStream → hidden video → requestPictureInPicture
+    //  (browser controls window size — min ~320px on Chrome)
+    // ════════════════════════════════════════════════════════
+    if (!document.pictureInPictureEnabled) {
+      toast.error('Picture-in-Picture not supported in this browser')
+      return
+    }
+    try {
+      if (canvasPipRef.current) { try { canvasPipRef.current.remove?.() } catch {} }
+      const canvas = document.createElement('canvas')
+      canvasPipRef.current = canvas
+      canvas.width = W; canvas.height = H
+      const ctx = canvas.getContext('2d')
+      const drawFrame = makeDrawFrame(ctx)
+      let rafId = null
+      const loop = () => { try { drawFrame() } catch(e) { console.warn('[PiP]',e) }; rafId = requestAnimationFrame(loop) }
+      rafId = requestAnimationFrame(loop)
+      startWatchdog(); setupMediaSession()
       if (!videoPipRef.current) {
         const v = document.createElement('video')
         v.muted = true; v.loop = true; v.playsInline = true
@@ -1798,36 +1846,13 @@ export default function RoomPage() {
       video.style.width = `${W}px`; video.style.height = `${H}px`
       await video.play()
       await video.requestPictureInPicture()
-
-      // ── Media Session controls ──
-      if ('mediaSession' in navigator) {
-        try {
-          navigator.mediaSession.setActionHandler('play', () => {
-            if (roomRef.current) roomRef.current = {...roomRef.current, isPlaying: true}
-            navigator.mediaSession.playbackState = 'playing'
-            const tryPlay = () => { try { ytPlayerRef.current?.unMute?.(); ytPlayerRef.current?.setVolume?.(100); ytPlayerRef.current?.playVideo?.() } catch {} }
-            tryPlay(); [300,700,1400].forEach(d => setTimeout(tryPlay, d))
-            import('firebase/firestore').then(({updateDoc,doc})=>import('@/lib/firebase').then(({db})=>updateDoc(doc(db,'rooms',roomId),{isPlaying:true}).catch(()=>{})))
-          })
-          navigator.mediaSession.setActionHandler('pause', () => {
-            if (roomRef.current) roomRef.current = {...roomRef.current, isPlaying: false}
-            navigator.mediaSession.playbackState = 'paused'
-            try { ytPlayerRef.current?.pauseVideo?.() } catch {}
-            import('firebase/firestore').then(({updateDoc,doc})=>import('@/lib/firebase').then(({db})=>updateDoc(doc(db,'rooms',roomId),{isPlaying:false}).catch(()=>{})))
-          })
-          navigator.mediaSession.setActionHandler('nexttrack', () => { try { if (roomRef.current?.hostId===user?.uid) skipToNext(roomId).catch(()=>{}) } catch {} })
-        } catch {}
-      }
-
-      clearInterval(canvasPipIntervalRef.current)
       canvasPipIntervalRef.current = {
         cancel: () => {
           if (rafId) cancelAnimationFrame(rafId)
           clearInterval(watchdogInterval)
-          try { if ('mediaSession' in navigator) { navigator.mediaSession.setActionHandler('play',null); navigator.mediaSession.setActionHandler('pause',null); navigator.mediaSession.setActionHandler('nexttrack',null) } } catch {}
+          teardownMediaSession()
         }
       }
-
       video.addEventListener('leavepictureinpicture', () => { canvasPipIntervalRef.current?.cancel?.() }, { once: true })
       toast.success('PiP opened — floats over other apps')
     } catch { toast.error('Could not open Picture-in-Picture') }
