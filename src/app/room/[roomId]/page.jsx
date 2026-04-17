@@ -1918,6 +1918,39 @@ export default function RoomPage() {
                 navigator.mediaSession.metadata = new MediaMetadata({ title: track.title||'We Vibe', artist: artEl2.textContent, artwork: track.thumbnail?[{src:track.thumbnail}]:[] })
               }
             } catch {}
+            // ── Force-play new track from PiP window context ──────────────
+            // The main page is hidden — its setTimeout is throttled to fire
+            // at most once per minute by Chrome. Retries must use pipWin.setTimeout
+            // which always runs at full speed because the PiP window is visible.
+            if (track?.videoId) {
+              const newId = track.videoId
+              const forcePlay = () => {
+                if (roomRef.current?.currentTrack?.videoId !== newId) return // already changed again
+                try {
+                  const p = ytPlayerRef.current; if (!p) return
+                  const loaded = p.getVideoData?.()?.video_id
+                  if (loaded !== newId) {
+                    p.loadVideoById({ videoId: newId, startSeconds: 0 })
+                    p.unMute?.(); p.setVolume?.(100)
+                  } else {
+                    const state = p.getPlayerState?.()
+                    p.unMute?.(); p.setVolume?.(100)
+                    if (state !== 1) p.playVideo?.() // 1 = PLAYING
+                  }
+                  // Belt-and-suspenders: postMessage to iframe directly (never throttled)
+                  try {
+                    const iframe = document.querySelector('iframe[src*="youtube"]')
+                    if (iframe?.contentWindow) {
+                      iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'unMute',    args: [] }), '*')
+                      iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'setVolume', args: [100] }), '*')
+                      iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'playVideo', args: [] }), '*')
+                    }
+                  } catch {}
+                } catch {}
+              }
+              forcePlay()
+              ;[300, 800, 1600, 3000].forEach(ms => pipWin.setTimeout(forcePlay, ms))
+            }
           }
           try { if ('mediaSession' in navigator) navigator.mediaSession.playbackState = playing ? 'playing' : 'paused' } catch {}
 
