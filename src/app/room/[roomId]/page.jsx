@@ -995,6 +995,7 @@ export default function RoomPage() {
   const [watchTime, setWatchTime] = useState(0) // drives the seek bar UI
   const [watchUrlInput, setWatchUrlInput] = useState('')
   const [watchCrop, setWatchCrop] = useState(false)
+  const [watchQuality, setWatchQuality] = useState('auto') // YouTube playback quality
   const [ytToken, setYtToken] = useState(user?.youtubeAccessToken || null)
   const [lyrics, setLyrics] = useState({ lines: [], plain: null, synced: false, loading: false })
   lyricsRef.current = lyrics // keep ref fresh for canvas drawFrame (avoids stale closure)
@@ -1228,6 +1229,21 @@ export default function RoomPage() {
     if (t > 0.5) e.target.seekTo(t, true)
     if (r?.watchIsPlaying) e.target.playVideo()
     else e.target.pauseVideo()
+    // Apply saved quality preference (only works if quality is available for this video)
+    try {
+      const q = watchQualityRef.current
+      if (q && q !== 'auto') e.target.setPlaybackQuality(q)
+    } catch {}
+  }
+
+  const watchQualityRef = useRef('auto')
+  function handleWatchQualityChange(q) {
+    watchQualityRef.current = q
+    setWatchQuality(q)
+    try {
+      if (q === 'auto') watchYtPlayerRef.current?.setPlaybackQuality?.('default')
+      else watchYtPlayerRef.current?.setPlaybackQuality?.(q)
+    } catch {}
   }
 
   // Sync all participants to host's play/pause/seek via Firestore
@@ -2819,13 +2835,20 @@ export default function RoomPage() {
                   onTouchEnd={e => { watchSeek(+e.target.value); updateWatchPlayback(roomId, { watchCurrentTime: +e.target.value, watchUpdatedAt: Date.now() }) }}
                   style={{ flex: 1, accentColor: 'var(--cyan)', cursor: 'pointer' }}
                 />
-                <span style={{ fontFamily: 'Oswald', fontSize: '0.65rem', color: 'var(--text-dim)', flexShrink: 0 }}>{isHost ? '⭐ HOST CONTROLS' : '🛡️ IN SYNC'}</span>
+                <select value={watchQuality} onChange={e => handleWatchQualityChange(e.target.value)}
+                  style={{ background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.2)', borderRadius: 6, padding: '4px 6px', color: 'var(--cyan)', fontFamily: 'Oswald', fontSize: '0.6rem', letterSpacing: '0.06em', cursor: 'pointer', flexShrink: 0 }}>
+                  {[['auto','AUTO'],['hd1080','1080p'],['hd720','720p'],['large','480p'],['medium','360p'],['small','240p'],['tiny','144p']].map(([v,l]) => <option key={v} value={v} style={{ background: '#111' }}>{l}</option>)}
+                </select>
+                <span style={{ fontFamily: 'Oswald', fontSize: '0.65rem', color: 'var(--text-dim)', flexShrink: 0 }}>{isHost ? '⭐ HOST' : '🛡️ SYNC'}</span>
               </>
             ) : (
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%' }}>
                 <span style={{ fontSize: '1.1rem' }}>{room.watchIsPlaying ? '▶' : '⏸'}</span>
                 <span style={{ fontFamily: 'Oswald', fontSize: '0.75rem', color: 'var(--text-dim)' }}>{room.watchIsPlaying ? 'Playing' : 'Paused by host'} · {fmtTime(watchTime)}</span>
-                <span style={{ marginLeft: 'auto', fontFamily: 'Oswald', fontSize: '0.65rem', color: 'var(--cyan)', background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.25)', borderRadius: 6, padding: '3px 8px' }}>🛡️ SYNCED WITH HOST</span>
+                <select value={watchQuality} onChange={e => handleWatchQualityChange(e.target.value)}
+                  style={{ marginLeft: 'auto', background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.2)', borderRadius: 6, padding: '4px 6px', color: 'var(--cyan)', fontFamily: 'Oswald', fontSize: '0.6rem', letterSpacing: '0.06em', cursor: 'pointer', flexShrink: 0 }}>
+                  {[['auto','AUTO'],['hd1080','1080p'],['hd720','720p'],['large','480p'],['medium','360p'],['small','240p'],['tiny','144p']].map(([v,l]) => <option key={v} value={v} style={{ background: '#111' }}>{l}</option>)}
+                </select>
               </div>
             )}
           </div>
@@ -2955,13 +2978,20 @@ export default function RoomPage() {
                       onTouchEnd={e => { watchSeek(+e.target.value); updateWatchPlayback(roomId, { watchCurrentTime: +e.target.value, watchUpdatedAt: Date.now() }) }}
                       style={{ flex: 1, accentColor: 'var(--cyan)', cursor: 'pointer', height: 4 }}
                     />
+                    <select value={watchQuality} onChange={e => handleWatchQualityChange(e.target.value)}
+                      style={{ background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.2)', borderRadius: 6, padding: '5px 8px', color: 'var(--cyan)', fontFamily: 'Oswald', fontSize: '0.65rem', letterSpacing: '0.06em', cursor: 'pointer', flexShrink: 0 }}>
+                      {[['auto','AUTO'],['hd1080','1080p'],['hd720','720p'],['large','480p'],['medium','360p'],['small','240p'],['tiny','144p']].map(([v,l]) => <option key={v} value={v} style={{ background: '#111' }}>{l}</option>)}
+                    </select>
                     <span style={{ fontFamily: 'Oswald', fontSize: '0.68rem', color: 'var(--text-dim)', flexShrink: 0 }}>{isHost ? '⭐ HOST CONTROLS' : '🛡️ IN SYNC'}</span>
                   </>
                 ) : (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 14, width: '100%' }}>
                     <span style={{ fontSize: '1.1rem' }}>{room.watchIsPlaying ? '▶' : '⏸'}</span>
                     <span style={{ fontFamily: 'Oswald', fontSize: '0.78rem', color: 'var(--text-dim)' }}>{room.watchIsPlaying ? 'Playing' : 'Paused by host'} · {fmtTime(watchTime)}</span>
-                    <span style={{ marginLeft: 'auto', fontFamily: 'Oswald', fontSize: '0.68rem', color: 'var(--cyan)', background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.25)', borderRadius: 6, padding: '4px 10px' }}>🛡️ SYNCED WITH HOST</span>
+                    <select value={watchQuality} onChange={e => handleWatchQualityChange(e.target.value)}
+                      style={{ marginLeft: 'auto', background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.2)', borderRadius: 6, padding: '5px 8px', color: 'var(--cyan)', fontFamily: 'Oswald', fontSize: '0.65rem', letterSpacing: '0.06em', cursor: 'pointer', flexShrink: 0 }}>
+                      {[['auto','AUTO'],['hd1080','1080p'],['hd720','720p'],['large','480p'],['medium','360p'],['small','240p'],['tiny','144p']].map(([v,l]) => <option key={v} value={v} style={{ background: '#111' }}>{l}</option>)}
+                    </select>
                   </div>
                 )}
               </div>
