@@ -1837,10 +1837,9 @@ export default function RoomPage() {
                 <div id="ttl">Loading\u2026</div>
                 <div id="arti"></div>
                 <div id="ctrl">
-                  <button class="cb" id="b-bk" style="width:26px;height:20px" title="-10s">\u23ea</button>
+                  <button class="cb" id="b-pv" style="width:26px;height:20px" title="Previous song">\u23ee</button>
                   <button class="cb" id="b-pl" style="width:32px;height:20px;background:rgba(0,255,136,0.18)" title="Play/Pause">\u25b6</button>
-                  <button class="cb" id="b-fw" style="width:26px;height:20px" title="+10s">\u23e9</button>
-                  <button class="cb" id="b-sk" style="width:26px;height:20px" title="Skip song">\u23ed</button>
+                  <button class="cb" id="b-sk" style="width:26px;height:20px" title="Next song">\u23ed</button>
                   <button class="cb" id="b-ly" style="width:26px;height:20px" title="Lyrics">\uD83C\uDF99</button>
                 </div>
               </div>
@@ -1855,9 +1854,8 @@ export default function RoomPage() {
         const artEl2 = d.getElementById('arti')
         const pfEl   = d.getElementById('pf')
         const lyrEl  = d.getElementById('lyr')
-        const bBk    = d.getElementById('b-bk')
+        const bPv    = d.getElementById('b-pv')
         const bPl    = d.getElementById('b-pl')
-        const bFw    = d.getElementById('b-fw')
         const bSk    = d.getElementById('b-sk')
         const bLy    = d.getElementById('b-ly')
 
@@ -1869,8 +1867,7 @@ export default function RoomPage() {
         setAccent()
 
         // ── Button handlers ──
-        bBk.onclick = () => { try { const p=ytPlayerRef.current; p?.seekTo?.(Math.max(0,(p?.getCurrentTime?.()||0)-10),true) } catch {} }
-        bFw.onclick = () => { try { const p=ytPlayerRef.current; const dr=p?.getDuration?.()||0; const t=(p?.getCurrentTime?.()||0)+10; p?.seekTo?.(dr>0?Math.min(dr,t):t,true) } catch {} }
+        bPv.onclick = () => handlePreviousTrack()
         bPl.onclick = () => {
           const pl = roomRef.current?.isPlaying
           try { if (pl) ytPlayerRef.current?.pauseVideo?.(); else { ytPlayerRef.current?.unMute?.(); ytPlayerRef.current?.playVideo?.() } } catch {}
