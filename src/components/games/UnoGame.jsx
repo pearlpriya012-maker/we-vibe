@@ -1,6 +1,5 @@
-'use client'
-// src/components/games/UnoGame.jsx
-// Full UNO multiplayer game UI — renders as a full-screen overlay.
+﻿'use client'
+// src/components/games/UnoGame.jsx  — Full redesign: real card look, drop animation, fan hand
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import {
@@ -13,147 +12,412 @@ import {
   writeUnoGame, saveUnoState, subscribeUnoGame, deleteUnoGame,
 } from '@/lib/unoFirestore'
 
-// ─── Card rendering ───────────────────────────────────────────────────────────
+// ─── Design tokens ────────────────────────────────────────────────────────────
 
-const COLOR_MAP = {
-  red:    { bg: '#e74c3c', text: '#fff', glow: 'rgba(231,76,60,0.5)' },
-  yellow: { bg: '#f1c40f', text: '#000', glow: 'rgba(241,196,15,0.5)' },
-  green:  { bg: '#27ae60', text: '#fff', glow: 'rgba(39,174,96,0.5)' },
-  blue:   { bg: '#2980b9', text: '#fff', glow: 'rgba(41,128,185,0.5)' },
-  wild:   { bg: 'linear-gradient(135deg,#e74c3c,#f1c40f,#27ae60,#2980b9)', text: '#fff', glow: 'rgba(255,255,255,0.3)' },
+const CC = {
+  red:    { bg: '#C0392B', dark: '#7B241C', glow: 'rgba(192,57,43,0.7)',  text: '#fff' },
+  yellow: { bg: '#D4AC0D', dark: '#9A7D0A', glow: 'rgba(212,172,13,0.7)', text: '#fff' },
+  green:  { bg: '#1E8449', dark: '#145A32', glow: 'rgba(30,132,73,0.7)',   text: '#fff' },
+  blue:   { bg: '#1A5276', dark: '#0D2B4A', glow: 'rgba(26,82,118,0.7)',   text: '#fff' },
+  wild:   { bg: '#1a1a2e', dark: '#0D0D18', glow: 'rgba(200,200,255,0.3)', text: '#fff' },
 }
 
-const VALUE_LABEL = {
-  skip: '⊘', reverse: '↺', draw2: '+2', wild: '★', wilddraw4: '+4★',
-}
+const WILD_BG = 'conic-gradient(from 225deg, #C0392B 0deg 90deg, #1A5276 90deg 180deg, #1E8449 180deg 270deg, #D4AC0D 270deg 360deg)'
 
-function CardFace({ card, small, selected, playable, onClick, style = {} }) {
+const VL = { skip: 'Ø', reverse: '↻', draw2: '+2', wild: '✦', wilddraw4: '+4' }
+const cardLabel   = v => VL[v] ?? v.toUpperCase()
+const cornerLabel = v => VL[v] ?? v
+
+// ─── CSS animations ───────────────────────────────────────────────────────────
+
+const UNO_STYLES = `
+  @keyframes unoDrop {
+    0%   { transform: scale(0.5) translateY(-55px) rotate(-24deg); opacity:0; }
+    55%  { transform: scale(1.12) translateY(5px)  rotate(3deg);   opacity:1; }
+    78%  { transform: scale(0.96) translateY(-2px) rotate(-1deg); }
+    100% { transform: scale(1)   translateY(0)    rotate(0deg);   opacity:1; }
+  }
+  @keyframes unoGlow {
+    0%,100% { filter: brightness(1)    saturate(1);   }
+    50%     { filter: brightness(1.22) saturate(1.35); }
+  }
+  @keyframes unoBlink {
+    0%,100% { opacity:1; transform:scale(1); }
+    50%     { opacity:.8; transform:scale(1.06); }
+  }
+  @keyframes unoFadeUp {
+    from { opacity:0; transform:translateY(10px); }
+    to   { opacity:1; transform:translateY(0); }
+  }
+  .uno-drop    { animation: unoDrop  .42s cubic-bezier(.175,.885,.32,1.275) both; }
+  .uno-glow    { animation: unoGlow  1.8s ease-in-out infinite; }
+  .uno-blink   { animation: unoBlink   1s ease-in-out infinite; }
+  .uno-fadein  { animation: unoFadeUp .25s ease both; }
+`
+
+// ─── CardFace ─────────────────────────────────────────────────────────────────
+
+function CardFace({ card, small, selected, playable, onClick, style = {}, className = '' }) {
   if (!card) return null
-  const c = COLOR_MAP[card.color] || COLOR_MAP.wild
-  const label = VALUE_LABEL[card.value] ?? card.value.toUpperCase()
-  const size = small ? { w: 38, h: 54, font: '0.7rem', corner: '0.45rem' }
-                     : { w: 56, h: 80, font: '1rem', corner: '0.6rem' }
+  const isWild = card.color === 'wild'
+  const W = small ? 42 : 62
+  const H = small ? 60 : 88
+  const r  = Math.round(W * 0.13)
+  const cc = CC[card.color] || CC.wild
+  const cl = cardLabel(card.value)
+  const co = cornerLabel(card.value)
 
   return (
     <div
       onClick={onClick}
+      className={[className, playable && !selected ? 'uno-glow' : ''].filter(Boolean).join(' ')}
       title={`${card.color} ${card.value}`}
       style={{
-        width: size.w, height: size.h,
-        borderRadius: size.corner,
-        background: c.bg,
-        color: c.text,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontFamily: 'Oswald', fontWeight: 700, fontSize: size.font,
+        position: 'relative',
+        width: W, height: H,
+        borderRadius: r,
+        background: isWild ? WILD_BG : cc.bg,
         boxShadow: selected
-          ? `0 0 0 3px #fff, 0 0 16px ${c.glow}`
+          ? `0 0 0 3px #fff, 0 0 0 5px ${cc.bg}, 0 10px 28px ${cc.glow}`
           : playable
-            ? `0 0 10px ${c.glow}`
-            : '0 2px 6px rgba(0,0,0,0.4)',
-        transform: selected ? 'translateY(-10px) scale(1.08)' : playable ? 'translateY(-4px)' : 'none',
-        transition: 'transform 0.15s, box-shadow 0.15s',
-        cursor: onClick && playable ? 'pointer' : onClick ? 'default' : 'default',
-        opacity: onClick && !playable ? 0.55 : 1,
-        flexShrink: 0,
+            ? `0 8px 24px ${cc.glow}, 0 3px 10px rgba(0,0,0,0.5)`
+            : '0 3px 8px rgba(0,0,0,0.55)',
+        transform: selected
+          ? 'translateY(-20px) scale(1.09)'
+          : playable ? 'translateY(-5px)' : 'none',
+        transition: 'transform .18s cubic-bezier(.34,1.56,.64,1), box-shadow .15s',
+        cursor: onClick ? 'pointer' : 'default',
+        opacity: onClick && !playable && !selected ? 0.52 : 1,
         userSelect: 'none',
-        border: selected ? '2px solid #fff' : '2px solid rgba(255,255,255,0.15)',
-        letterSpacing: '0.02em',
+        flexShrink: 0,
+        overflow: 'hidden',
+        border: selected
+          ? '2px solid rgba(255,255,255,0.92)'
+          : '2px solid rgba(255,255,255,0.22)',
         ...style,
       }}
     >
-      {label}
+      {/* Diagonal stripe texture */}
+      <div style={{
+        position: 'absolute', inset: 0, pointerEvents: 'none',
+        backgroundImage: 'repeating-linear-gradient(45deg,transparent 0px,transparent 5px,rgba(0,0,0,0.055) 5px,rgba(0,0,0,0.055) 6px)',
+      }} />
+      {/* Centre oval tilted like a real UNO card */}
+      <div style={{
+        position: 'absolute',
+        top: '50%', left: '50%',
+        transform: 'translate(-50%,-50%) rotate(-20deg)',
+        width: W * 0.74, height: H * 0.59,
+        borderRadius: '50%',
+        background: isWild ? WILD_BG : 'rgba(255,255,255,0.93)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        overflow: 'hidden',
+        pointerEvents: 'none',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.28)',
+      }}>
+        <span style={{
+          fontFamily: 'Oswald', fontWeight: 800,
+          fontSize: small ? '0.92rem' : '1.38rem',
+          color: isWild ? '#fff' : cc.bg,
+          textShadow: isWild ? '0 1px 6px rgba(0,0,0,0.8)' : '0 1px 3px rgba(0,0,0,0.12)',
+          transform: 'rotate(20deg)',
+          display: 'inline-block',
+          lineHeight: 1,
+          letterSpacing: '-0.02em',
+        }}>
+          {cl}
+        </span>
+      </div>
+      {/* Top-left pip */}
+      <div style={{
+        position: 'absolute', top: 3, left: 4,
+        fontFamily: 'Oswald', fontWeight: 700,
+        fontSize: small ? '0.5rem' : '0.64rem',
+        color: '#fff', lineHeight: 1.1,
+        textShadow: '0 1px 4px rgba(0,0,0,0.9)',
+        pointerEvents: 'none',
+      }}>{co}</div>
+      {/* Bottom-right pip (upside down) */}
+      <div style={{
+        position: 'absolute', bottom: 3, right: 4,
+        fontFamily: 'Oswald', fontWeight: 700,
+        fontSize: small ? '0.5rem' : '0.64rem',
+        color: '#fff', lineHeight: 1.1,
+        textShadow: '0 1px 4px rgba(0,0,0,0.9)',
+        transform: 'rotate(180deg)',
+        pointerEvents: 'none',
+      }}>{co}</div>
+      {/* Gloss top highlight */}
+      <div style={{
+        position: 'absolute', top: 0, left: 0, right: 0, height: '40%',
+        background: 'linear-gradient(180deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0) 100%)',
+        borderRadius: `${r}px ${r}px 0 0`,
+        pointerEvents: 'none',
+      }} />
     </div>
   )
 }
 
-function CardBack({ small, style = {} }) {
-  const size = small ? { w: 32, h: 46 } : { w: 48, h: 68 }
+// ─── CardBack ─────────────────────────────────────────────────────────────────
+
+function CardBack({ small = false, style = {} }) {
+  const W = small ? 42 : 62
+  const H = small ? 60 : 88
+  const r = Math.round(W * 0.13)
   return (
     <div style={{
-      width: size.w, height: size.h, borderRadius: '0.5rem',
-      background: 'linear-gradient(135deg, #1a1a2e 60%, #16213e)',
-      border: '2px solid rgba(255,255,255,0.15)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontSize: small ? '0.65rem' : '0.9rem', color: 'rgba(255,255,255,0.3)',
+      position: 'relative',
+      width: W, height: H,
+      borderRadius: r,
+      background: 'linear-gradient(135deg, #100828 0%, #080818 100%)',
+      border: '2px solid rgba(255,255,255,0.12)',
+      overflow: 'hidden',
       flexShrink: 0,
       ...style,
     }}>
-      🃏
+      <div style={{
+        position: 'absolute', inset: 0, pointerEvents: 'none',
+        backgroundImage: 'radial-gradient(rgba(255,255,255,0.042) 1px, transparent 1px)',
+        backgroundSize: '7px 7px',
+      }} />
+      <div style={{
+        position: 'absolute', top: '50%', left: '50%',
+        transform: 'translate(-50%,-50%) rotate(-20deg)',
+        width: W * 0.7, height: H * 0.52,
+        background: 'linear-gradient(135deg, #C0392B 35%, #1A5276 100%)',
+        borderRadius: '50%',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        boxShadow: '0 0 14px rgba(192,57,43,0.4)',
+        overflow: 'hidden',
+      }}>
+        <span style={{
+          fontFamily: 'Oswald', fontWeight: 800,
+          fontSize: small ? '0.5rem' : '0.72rem',
+          color: '#fff', letterSpacing: '0.08em',
+          transform: 'rotate(20deg)', display: 'inline-block',
+          textShadow: '0 1px 4px rgba(0,0,0,0.5)',
+        }}>UNO</span>
+      </div>
+      <div style={{
+        position: 'absolute', top: 0, left: 0, right: 0, height: '40%',
+        background: 'linear-gradient(180deg, rgba(255,255,255,0.07) 0%, transparent 100%)',
+        borderRadius: `${r}px ${r}px 0 0`, pointerEvents: 'none',
+      }} />
     </div>
   )
 }
 
-// ─── Opponent seat ────────────────────────────────────────────────────────────
+// ─── DrawPileStack ────────────────────────────────────────────────────────────
 
-function OpponentSeat({ opponent, isCurrent, callUnoEnabled, onCatchUno, unoEligible }) {
+function DrawPileStack({ count, onClick, enabled }) {
   return (
-    <div style={{
-      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
-      padding: '8px 12px', borderRadius: 12,
-      background: isCurrent ? 'rgba(255,215,0,0.08)' : 'rgba(255,255,255,0.03)',
-      border: `1px solid ${isCurrent ? 'rgba(255,215,0,0.4)' : 'rgba(255,255,255,0.08)'}`,
-      transition: 'all 0.3s',
-      minWidth: 70,
-    }}>
-      <div style={{ position: 'relative' }}>
-        {opponent.photoURL
-          ? <img src={opponent.photoURL} alt="" style={{ width: 34, height: 34, borderRadius: '50%', objectFit: 'cover', border: `2px solid ${isCurrent ? 'gold' : 'transparent'}` }} />
-          : <div style={{ width: 34, height: 34, borderRadius: '50%', background: 'linear-gradient(135deg,#e74c3c,#2980b9)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Oswald', fontWeight: 700, fontSize: '0.9rem', color: '#fff', border: `2px solid ${isCurrent ? 'gold' : 'transparent'}` }}>
-              {opponent.displayName?.[0]?.toUpperCase() || '?'}
-            </div>
-        }
-        {isCurrent && <div style={{ position: 'absolute', top: -4, right: -4, fontSize: '0.7rem' }}>👑</div>}
-      </div>
-
-      <div style={{ fontFamily: 'Oswald', fontSize: '0.65rem', color: isCurrent ? 'gold' : 'var(--text-dim)', textAlign: 'center', maxWidth: 64, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        {opponent.displayName}
-      </div>
-
-      {/* Card backs row */}
-      <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap', justifyContent: 'center', maxWidth: 80 }}>
-        {Array.from({ length: Math.min(opponent.count, 8) }).map((_, i) => (
-          <CardBack key={i} small style={{ width: 14, height: 20 }} />
-        ))}
-        {opponent.count > 8 && <span style={{ fontSize: '0.6rem', color: 'var(--text-dim)' }}>+{opponent.count - 8}</span>}
-      </div>
-
-      <div style={{ fontFamily: 'Oswald', fontSize: '0.7rem', color: opponent.count === 1 ? 'var(--pink)' : 'var(--text-dim)' }}>
-        {opponent.count} card{opponent.count !== 1 ? 's' : ''}
-      </div>
-
-      {unoEligible && callUnoEnabled && (
-        <button onClick={() => onCatchUno(opponent.uid)}
-          style={{ background: 'var(--pink)', border: 'none', borderRadius: 6, padding: '3px 8px', color: '#fff', fontFamily: 'Oswald', fontSize: '0.6rem', cursor: 'pointer', letterSpacing: '0.08em' }}>
-          CATCH!
-        </button>
+    <div
+      onClick={enabled ? onClick : undefined}
+      style={{ position: 'relative', width: 70, height: 96, flexShrink: 0, cursor: enabled ? 'pointer' : 'default' }}
+    >
+      <CardBack style={{ position: 'absolute', top: 6, left: 6, opacity: 0.4 }} />
+      <CardBack style={{ position: 'absolute', top: 3, left: 3, opacity: 0.65 }} />
+      <CardBack style={{ position: 'absolute', top: 0, left: 0 }} />
+      {enabled && (
+        <div style={{
+          position: 'absolute', top: 0, left: 0, width: 62, height: 88,
+          borderRadius: 8, border: '2px solid rgba(0,255,136,0.5)',
+          boxShadow: '0 0 16px rgba(0,255,136,0.35)',
+          pointerEvents: 'none',
+        }} />
+      )}
+      {count > 0 && (
+        <div style={{
+          position: 'absolute', top: -8, right: -2, zIndex: 10,
+          background: 'rgba(0,0,0,0.9)', border: '1px solid rgba(255,255,255,0.22)',
+          borderRadius: '50%', width: 22, height: 22,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontFamily: 'Oswald', fontSize: '0.52rem', color: '#fff',
+        }}>{count}</div>
       )}
     </div>
   )
 }
 
-// ─── Color picker modal ───────────────────────────────────────────────────────
+// ─── DiscardPileArea — key on drop div triggers CSS animation on new card ─────
+
+function DiscardPileArea({ topCard, prevCard, currentColor }) {
+  return (
+    <div style={{ position: 'relative', width: 62, height: 88, flexShrink: 0 }}>
+      {prevCard && (
+        <div style={{
+          position: 'absolute', top: 4, left: 6, zIndex: 0,
+          opacity: 0.42, transform: 'rotate(14deg)',
+          pointerEvents: 'none',
+        }}>
+          <CardFace card={prevCard} />
+        </div>
+      )}
+      {topCard && (
+        <div key={topCard.id} className="uno-drop" style={{ position: 'absolute', top: 0, left: 0, zIndex: 1 }}>
+          <CardFace card={topCard} />
+        </div>
+      )}
+      {currentColor && topCard?.color === 'wild' && (
+        <div style={{
+          position: 'absolute', bottom: -7, right: -7,
+          width: 18, height: 18, borderRadius: '50%',
+          background: CC[currentColor]?.bg,
+          border: '2.5px solid rgba(255,255,255,0.55)',
+          boxShadow: `0 0 10px ${CC[currentColor]?.glow}`,
+          zIndex: 5,
+        }} />
+      )}
+    </div>
+  )
+}
+
+// ─── HandFan — arc fan layout ─────────────────────────────────────────────────
+
+function HandFan({ cards, selectedId, drawnId, onCardClick, cardIsPlayable }) {
+  const n = cards.length
+  const step = n > 12 ? 2.5 : n > 8 ? 3.5 : n > 5 ? 5 : 7
+
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'flex-end',
+      justifyContent: n < 7 ? 'center' : 'flex-start',
+      paddingTop: 22, paddingBottom: 16,
+      overflowX: n > 10 ? 'auto' : 'visible',
+      scrollbarWidth: 'none',
+      minHeight: 126,
+    }}>
+      {cards.map((card, i) => {
+        const ctr = (n - 1) / 2
+        const t   = n > 1 ? (i - ctr) / Math.max(ctr, 1) : 0
+        const angle = t * step * ((n - 1) / 2)
+        const arc   = Math.pow(Math.abs(t), 1.4) * 14
+        const isSelected = card.id === selectedId
+        const isDrawn    = card.id === drawnId
+        const playable   = cardIsPlayable(card) || isDrawn
+
+        return (
+          <div
+            key={card.id}
+            className="uno-fadein"
+            style={{
+              marginLeft: i === 0 ? 0 : -18,
+              zIndex: isSelected ? 60 : i,
+              transform: isSelected
+                ? 'translateY(-22px) scale(1.1) rotate(0deg)'
+                : `rotate(${angle}deg) translateY(${arc}px)`,
+              transformOrigin: 'bottom center',
+              transition: 'transform .2s cubic-bezier(.34,1.56,.64,1)',
+              position: 'relative',
+              flexShrink: 0,
+            }}
+          >
+            <CardFace
+              card={card}
+              playable={playable}
+              selected={isSelected}
+              onClick={playable ? () => onCardClick(card.id) : undefined}
+            />
+            {isDrawn && (
+              <div style={{
+                position: 'absolute', top: -10, left: '50%',
+                transform: 'translateX(-50%)',
+                fontSize: '0.44rem', color: 'var(--green)',
+                background: 'rgba(0,255,136,0.12)',
+                border: '1px solid rgba(0,255,136,0.35)',
+                borderRadius: 3, padding: '1px 4px',
+                fontFamily: 'Oswald', whiteSpace: 'nowrap',
+              }}>NEW</div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ─── OpponentSeat ─────────────────────────────────────────────────────────────
+
+function OpponentSeat({ opponent, isCurrent, onCatchUno, unoEligible }) {
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5,
+      padding: '8px 10px', borderRadius: 12, minWidth: 68, flexShrink: 0,
+      background: isCurrent ? 'rgba(255,215,0,0.07)' : 'rgba(255,255,255,0.025)',
+      border: `1.5px solid ${isCurrent ? 'rgba(255,215,0,0.38)' : 'rgba(255,255,255,0.07)'}`,
+      transition: 'all .3s',
+      boxShadow: isCurrent ? '0 0 18px rgba(255,215,0,0.1)' : 'none',
+    }}>
+      <div style={{ position: 'relative' }}>
+        {opponent.photoURL
+          ? <img src={opponent.photoURL} alt="" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover', border: `2px solid ${isCurrent ? 'gold' : 'rgba(255,255,255,0.1)'}` }} />
+          : <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'linear-gradient(135deg,#C0392B,#1A5276)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Oswald', fontWeight: 700, fontSize: '0.85rem', color: '#fff', border: `2px solid ${isCurrent ? 'gold' : 'transparent'}` }}>
+              {(opponent.displayName || '?')[0].toUpperCase()}
+            </div>
+        }
+        {isCurrent && <div style={{ position: 'absolute', top: -5, right: -5, fontSize: '0.65rem' }}>👑</div>}
+      </div>
+      <div style={{ fontFamily: 'Oswald', fontSize: '0.62rem', color: isCurrent ? 'gold' : 'var(--text-dim)', maxWidth: 64, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'center' }}>
+        {opponent.displayName}
+      </div>
+      <div style={{ display: 'flex', gap: 1, flexWrap: 'nowrap' }}>
+        {Array.from({ length: Math.min(opponent.count, 7) }).map((_, j) => (
+          <div key={j} style={{
+            width: 7, height: 11, borderRadius: 1.5,
+            background: 'linear-gradient(135deg,#330a18,#0a106b)',
+            border: '0.5px solid rgba(255,255,255,0.22)',
+          }} />
+        ))}
+        {opponent.count > 7 && <span style={{ fontSize: '0.5rem', color: 'var(--text-dim)', marginLeft: 2 }}>+{opponent.count - 7}</span>}
+      </div>
+      <div style={{ fontFamily: 'Oswald', fontSize: '0.68rem', color: opponent.count === 1 ? '#ff6b6b' : 'var(--text-dim)' }}>
+        {opponent.count}{opponent.count === 1 ? ' 🔔' : ''}
+      </div>
+      {unoEligible && (
+        <button onClick={() => onCatchUno(opponent.uid)} style={{
+          background: 'linear-gradient(135deg,#C0392B,#7B241C)',
+          border: 'none', borderRadius: 6, padding: '3px 8px',
+          color: '#fff', fontFamily: 'Oswald', fontSize: '0.58rem',
+          cursor: 'pointer', letterSpacing: '0.08em',
+          boxShadow: '0 0 10px rgba(192,57,43,0.55)',
+        }}>CATCH!</button>
+      )}
+    </div>
+  )
+}
+
+// ─── ColorPicker ──────────────────────────────────────────────────────────────
 
 function ColorPicker({ onPick }) {
   return (
     <div style={{
-      position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 100,
-      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24,
+      position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.88)',
+      zIndex: 100, backdropFilter: 'blur(5px)',
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 28,
     }}>
-      <div style={{ fontFamily: 'Oswald', fontSize: '1.3rem', color: '#fff', letterSpacing: '0.15em' }}>CHOOSE A COLOR</div>
-      <div style={{ display: 'flex', gap: 16 }}>
+      <div style={{ fontFamily: 'Oswald', fontSize: '1.4rem', color: '#fff', letterSpacing: '0.18em' }}>
+        CHOOSE COLOR
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
         {COLORS.map(c => (
-          <button key={c} onClick={() => onPick(c)} style={{
-            width: 64, height: 64, borderRadius: 14,
-            background: COLOR_MAP[c].bg, border: '3px solid rgba(255,255,255,0.2)',
-            cursor: 'pointer', boxShadow: `0 0 20px ${COLOR_MAP[c].glow}`,
-            transition: 'transform 0.15s',
-            fontFamily: 'Oswald', fontWeight: 700, fontSize: '0.65rem',
-            color: COLOR_MAP[c].text, letterSpacing: '0.08em',
-          }}
-            onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.15)'}
-            onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+          <button
+            key={c} onClick={() => onPick(c)}
+            style={{
+              width: 82, height: 82, borderRadius: 18,
+              background: CC[c].bg,
+              border: '3px solid rgba(255,255,255,0.25)',
+              cursor: 'pointer',
+              boxShadow: `0 4px 22px ${CC[c].glow}, inset 0 1px 0 rgba(255,255,255,0.25)`,
+              fontFamily: 'Oswald', fontWeight: 700, fontSize: '0.72rem',
+              color: '#fff', letterSpacing: '0.1em',
+              textTransform: 'uppercase',
+              transition: 'transform .15s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.1)' }}
+            onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)' }}
           >
-            {c.toUpperCase()}
+            {c}
           </button>
         ))}
       </div>
@@ -161,164 +425,163 @@ function ColorPicker({ onPick }) {
   )
 }
 
-// ─── Lobby (waiting room) ─────────────────────────────────────────────────────
+// ─── Lobby ────────────────────────────────────────────────────────────────────
 
 function UnoLobby({ roomParticipants, currentUser, onStart, onClose }) {
   const [houseRules, setHouseRules] = useState({ stackDraw: false, sevenSwap: false, jumpIn: false })
-
-  const toggle = (key) => setHouseRules(r => ({ ...r, [key]: !r[key] }))
+  const toggle = k => setHouseRules(r => ({ ...r, [k]: !r[k] }))
+  const canStart = roomParticipants.length >= 2
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 28, padding: 24 }}>
-      <div style={{ fontFamily: 'Oswald', fontSize: '2rem', fontWeight: 700, letterSpacing: '0.2em', background: 'linear-gradient(135deg,#e74c3c,#f1c40f,#27ae60,#2980b9)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-        UNO
-      </div>
+    <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 24, padding: '28px 20px' }}>
+      <div style={{
+        fontFamily: 'Oswald', fontSize: '3.2rem', fontWeight: 800, letterSpacing: '0.3em',
+        background: WILD_BG, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+        filter: 'drop-shadow(0 0 22px rgba(192,57,43,0.42))',
+      }}>UNO</div>
 
-      {/* Players in lobby */}
       <div style={{ width: '100%', maxWidth: 400 }}>
-        <div style={{ fontFamily: 'Oswald', fontSize: '0.7rem', color: 'var(--text-dim)', letterSpacing: '0.12em', marginBottom: 10 }}>
+        <div style={{ fontFamily: 'Oswald', fontSize: '0.68rem', color: 'var(--text-dim)', letterSpacing: '0.14em', marginBottom: 10 }}>
           PLAYERS ({roomParticipants.length}/10)
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {roomParticipants.map(p => (
-            <div key={p.uid} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
-              {p.photoURL
-                ? <img src={p.photoURL} alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover' }} />
-                : <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg,#e74c3c,#2980b9)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Oswald', fontWeight: 700, fontSize: '0.75rem', color: '#fff' }}>{p.displayName?.[0]?.toUpperCase() || '?'}</div>
-              }
-              <span style={{ fontFamily: 'Oswald', fontSize: '0.82rem', color: '#fff' }}>{p.displayName}</span>
-              {p.uid === currentUser.uid && <span style={{ fontSize: '0.6rem', color: 'var(--green)', marginLeft: 'auto' }}>YOU</span>}
-            </div>
-          ))}
-        </div>
+        {roomParticipants.map(p => (
+          <div key={p.uid} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', borderRadius: 10, background: 'rgba(255,255,255,0.035)', border: '1px solid rgba(255,255,255,0.07)', marginBottom: 6 }}>
+            {p.photoURL
+              ? <img src={p.photoURL} alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover' }} />
+              : <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg,#C0392B,#1A5276)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Oswald', fontWeight: 700, fontSize: '0.75rem', color: '#fff' }}>{(p.displayName || '?')[0].toUpperCase()}</div>
+            }
+            <span style={{ fontFamily: 'Oswald', fontSize: '0.82rem', color: '#fff' }}>{p.displayName}</span>
+            {p.uid === currentUser.uid && <span style={{ fontSize: '0.6rem', color: 'var(--green)', marginLeft: 'auto', letterSpacing: '0.06em' }}>YOU</span>}
+          </div>
+        ))}
       </div>
 
-      {/* House rules */}
       <div style={{ width: '100%', maxWidth: 400 }}>
-        <div style={{ fontFamily: 'Oswald', fontSize: '0.7rem', color: 'var(--text-dim)', letterSpacing: '0.12em', marginBottom: 10 }}>HOUSE RULES</div>
+        <div style={{ fontFamily: 'Oswald', fontSize: '0.68rem', color: 'var(--text-dim)', letterSpacing: '0.14em', marginBottom: 10 }}>HOUSE RULES</div>
         {[
-          ['stackDraw', 'Stack +2 / +4', 'Chain draw cards — accumulate until someone can\'t stack'],
-          ['sevenSwap', '7-Swap / 0-Rotate', 'Play 7 to swap hands; play 0 to rotate all hands'],
-          ['jumpIn',    'Jump-In', 'Play an identical card out of turn'],
+          ['stackDraw', 'Stack +2 / +4',    "Chain draw cards until someone can't stack"],
+          ['sevenSwap', '7-Swap / 0-Rotate', 'Play 7 to swap hands; 0 rotates all hands'],
+          ['jumpIn',    'Jump-In',            'Play an identical card out of turn'],
         ].map(([key, label, desc]) => (
-          <div key={key} onClick={() => toggle(key)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 10, background: houseRules[key] ? 'rgba(0,255,136,0.06)' : 'rgba(255,255,255,0.02)', border: `1px solid ${houseRules[key] ? 'rgba(0,255,136,0.25)' : 'rgba(255,255,255,0.06)'}`, cursor: 'pointer', marginBottom: 8 }}>
-            <div style={{ width: 36, height: 20, borderRadius: 10, background: houseRules[key] ? 'var(--green)' : 'rgba(255,255,255,0.1)', position: 'relative', flexShrink: 0, transition: 'background 0.2s' }}>
-              <div style={{ position: 'absolute', top: 2, left: houseRules[key] ? 18 : 2, width: 16, height: 16, borderRadius: '50%', background: houseRules[key] ? '#000' : 'var(--text-dim)', transition: 'left 0.2s' }} />
+          <div key={key} onClick={() => toggle(key)} style={{
+            display: 'flex', alignItems: 'center', gap: 12,
+            padding: '10px 14px', borderRadius: 10, cursor: 'pointer', marginBottom: 8,
+            background: houseRules[key] ? 'rgba(0,255,136,0.05)' : 'rgba(255,255,255,0.02)',
+            border: `1px solid ${houseRules[key] ? 'rgba(0,255,136,0.22)' : 'rgba(255,255,255,0.06)'}`,
+          }}>
+            <div style={{ width: 36, height: 20, borderRadius: 10, background: houseRules[key] ? 'var(--green)' : 'rgba(255,255,255,0.1)', position: 'relative', flexShrink: 0, transition: 'background .2s' }}>
+              <div style={{ position: 'absolute', top: 2, left: houseRules[key] ? 18 : 2, width: 16, height: 16, borderRadius: '50%', background: houseRules[key] ? '#000' : 'var(--text-dim)', transition: 'left .2s' }} />
             </div>
             <div>
               <div style={{ fontFamily: 'Oswald', fontSize: '0.78rem', color: houseRules[key] ? 'var(--green)' : '#fff' }}>{label}</div>
-              <div style={{ fontSize: '0.65rem', color: 'var(--text-dim)', marginTop: 2 }}>{desc}</div>
+              <div style={{ fontSize: '0.62rem', color: 'var(--text-dim)', marginTop: 1 }}>{desc}</div>
             </div>
           </div>
         ))}
       </div>
 
       <div style={{ display: 'flex', gap: 12 }}>
-        <button onClick={onClose} style={{ padding: '10px 24px', borderRadius: 10, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-dim)', fontFamily: 'Oswald', fontSize: '0.85rem', cursor: 'pointer' }}>
+        <button onClick={onClose} style={{ padding: '11px 24px', borderRadius: 10, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-dim)', fontFamily: 'Oswald', fontSize: '0.85rem', cursor: 'pointer', letterSpacing: '0.06em' }}>
           Cancel
         </button>
-        <button onClick={() => onStart(houseRules)}
-          disabled={roomParticipants.length < 2}
-          style={{ padding: '10px 32px', borderRadius: 10, background: roomParticipants.length < 2 ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg,#e74c3c,#2980b9)', border: 'none', color: '#fff', fontFamily: 'Oswald', fontSize: '0.9rem', fontWeight: 700, letterSpacing: '0.1em', cursor: roomParticipants.length < 2 ? 'not-allowed' : 'pointer', opacity: roomParticipants.length < 2 ? 0.4 : 1 }}>
+        <button onClick={() => onStart(houseRules)} disabled={!canStart} style={{
+          padding: '11px 36px', borderRadius: 10, border: 'none',
+          background: canStart ? WILD_BG : 'rgba(255,255,255,0.05)',
+          color: canStart ? '#fff' : 'var(--text-dim)',
+          fontFamily: 'Oswald', fontSize: '0.9rem', fontWeight: 700, letterSpacing: '0.12em',
+          cursor: canStart ? 'pointer' : 'not-allowed', opacity: canStart ? 1 : 0.4,
+        }}>
           START GAME
         </button>
       </div>
-      {roomParticipants.length < 2 && (
-        <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>Need at least 2 players</div>
-      )}
+      {!canStart && <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>Need at least 2 players</div>}
     </div>
   )
 }
 
-// ─── Game over screen ─────────────────────────────────────────────────────────
+// ─── GameOver ─────────────────────────────────────────────────────────────────
 
 function GameOver({ game, currentUser, onPlayAgain, onClose }) {
-  const winner = game.winner
-  const myScore = game.scores?.[currentUser.uid] || 0
+  const winner   = game.winner
   const isWinner = winner === currentUser.uid
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 20, padding: 24 }}>
-      <div style={{ fontSize: '4rem' }}>{isWinner ? '🏆' : '😢'}</div>
-      <div style={{ fontFamily: 'Oswald', fontSize: '1.6rem', color: isWinner ? 'gold' : 'var(--text-dim)', letterSpacing: '0.2em' }}>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 22, padding: 28, overflowY: 'auto' }}>
+      <div style={{ fontSize: '4.5rem', lineHeight: 1 }}>{isWinner ? '🏆' : '😭'}</div>
+      <div style={{
+        fontFamily: 'Oswald', fontSize: '1.7rem', letterSpacing: '0.2em',
+        background: isWinner ? 'linear-gradient(135deg,gold,#ff9500)' : 'none',
+        color: isWinner ? 'transparent' : 'var(--text-dim)',
+        WebkitBackgroundClip: isWinner ? 'text' : undefined,
+        WebkitTextFillColor: isWinner ? 'transparent' : undefined,
+      }}>
         {isWinner ? 'YOU WIN!' : `${game.players[winner]?.displayName} WINS!`}
       </div>
 
-      {/* Scores */}
-      <div style={{ width: '100%', maxWidth: 360 }}>
-        <div style={{ fontFamily: 'Oswald', fontSize: '0.7rem', color: 'var(--text-dim)', letterSpacing: '0.12em', marginBottom: 10 }}>SCORES</div>
+      <div style={{ width: '100%', maxWidth: 380 }}>
+        <div style={{ fontFamily: 'Oswald', fontSize: '0.68rem', color: 'var(--text-dim)', letterSpacing: '0.14em', marginBottom: 10 }}>SCORES</div>
         {Object.entries(game.scores || {}).sort((a, b) => b[1] - a[1]).map(([uid, score]) => (
-          <div key={uid} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px', borderRadius: 10, background: uid === winner ? 'rgba(255,215,0,0.06)' : 'rgba(255,255,255,0.03)', border: `1px solid ${uid === winner ? 'rgba(255,215,0,0.2)' : 'rgba(255,255,255,0.06)'}`, marginBottom: 6 }}>
+          <div key={uid} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 14px', borderRadius: 10, marginBottom: 6, background: uid === winner ? 'rgba(255,215,0,0.06)' : 'rgba(255,255,255,0.025)', border: `1px solid ${uid === winner ? 'rgba(255,215,0,0.22)' : 'rgba(255,255,255,0.06)'}` }}>
             <span style={{ fontFamily: 'Oswald', fontSize: '0.82rem', color: uid === winner ? 'gold' : '#fff' }}>{game.players[uid]?.displayName}</span>
             <span style={{ fontFamily: 'Oswald', fontSize: '0.82rem', color: uid === winner ? 'gold' : 'var(--text-dim)' }}>{score} pts</span>
           </div>
         ))}
       </div>
 
-      {/* Remaining hands */}
-      <div style={{ width: '100%', maxWidth: 360 }}>
-        <div style={{ fontFamily: 'Oswald', fontSize: '0.65rem', color: 'var(--text-dim)', letterSpacing: '0.1em', marginBottom: 8 }}>HAND VALUES</div>
+      <div style={{ width: '100%', maxWidth: 380 }}>
+        <div style={{ fontFamily: 'Oswald', fontSize: '0.64rem', color: 'var(--text-dim)', letterSpacing: '0.1em', marginBottom: 8 }}>HAND VALUES</div>
         {Object.entries(game.hands || {}).filter(([uid]) => uid !== winner).map(([uid, hand]) => (
-          <div key={uid} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 12px', borderRadius: 8, background: 'rgba(255,255,255,0.02)', marginBottom: 4 }}>
+          <div key={uid} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 12px', borderRadius: 8, background: 'rgba(255,255,255,0.018)', marginBottom: 4 }}>
             <span style={{ fontFamily: 'Oswald', fontSize: '0.75rem', color: 'var(--text-dim)' }}>{game.players[uid]?.displayName}</span>
-            <span style={{ fontFamily: 'Oswald', fontSize: '0.75rem', color: 'var(--pink)' }}>{hand.reduce((s, c) => s + cardScore(c), 0)} pts</span>
+            <div style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
+              {hand.slice(0, 5).map(c => <CardFace key={c.id} card={c} small />)}
+              {hand.length > 5 && <span style={{ fontSize: '0.6rem', color: 'var(--text-dim)' }}>+{hand.length - 5}</span>}
+              <span style={{ fontFamily: 'Oswald', fontSize: '0.75rem', color: '#ff6b6b', marginLeft: 6 }}>{hand.reduce((s, c) => s + cardScore(c), 0)} pts</span>
+            </div>
           </div>
         ))}
       </div>
 
       <div style={{ display: 'flex', gap: 12 }}>
-        <button onClick={onClose} style={{ padding: '10px 24px', borderRadius: 10, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-dim)', fontFamily: 'Oswald', fontSize: '0.85rem', cursor: 'pointer' }}>Close</button>
-        <button onClick={onPlayAgain} style={{ padding: '10px 32px', borderRadius: 10, background: 'linear-gradient(135deg,#e74c3c,#2980b9)', border: 'none', color: '#fff', fontFamily: 'Oswald', fontSize: '0.9rem', fontWeight: 700, letterSpacing: '0.1em', cursor: 'pointer' }}>Play Again</button>
+        <button onClick={onClose} style={{ padding: '11px 24px', borderRadius: 10, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-dim)', fontFamily: 'Oswald', fontSize: '0.82rem', cursor: 'pointer' }}>Close</button>
+        <button onClick={onPlayAgain} style={{ padding: '11px 36px', borderRadius: 10, background: WILD_BG, border: 'none', color: '#fff', fontFamily: 'Oswald', fontSize: '0.9rem', fontWeight: 700, letterSpacing: '0.12em', cursor: 'pointer' }}>Play Again</button>
       </div>
     </div>
   )
 }
 
-// ─── Main UnoGame component ───────────────────────────────────────────────────
+// ─── Main UnoGame ─────────────────────────────────────────────────────────────
 
 export default function UnoGame({ roomId, roomParticipants, currentUser, onClose }) {
-  const [game, setGame] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [game, setGame]                     = useState(null)
+  const [loading, setLoading]               = useState(true)
   const [selectedCardId, setSelectedCardId] = useState(null)
-  const [error, setError] = useState(null)
-  const [showLog, setShowLog] = useState(false)
-  const [challengePending, setChallengePending] = useState(false)
-  const [sevenTarget, setSevenTarget] = useState(null) // uid to swap with
+  const [error, setError]                   = useState(null)
+  const [showLog, setShowLog]               = useState(false)
+  const [sevenTarget, setSevenTarget]       = useState(null)
   const gameRef = useRef(null)
 
-  // Live subscription
   useEffect(() => {
-    const unsub = subscribeUnoGame(roomId, state => {
-      setGame(state)
-      gameRef.current = state
-      setLoading(false)
-    })
+    const unsub = subscribeUnoGame(roomId, s => { setGame(s); gameRef.current = s; setLoading(false) })
     return unsub
   }, [roomId])
 
-  const act = useCallback(async (fn) => {
+  const act = useCallback(async fn => {
     setError(null)
     try {
-      const current = gameRef.current
-      if (!current) return
-      const next = fn(current)
+      const next = fn(gameRef.current)
       await saveUnoState(roomId, next)
     } catch (e) {
       setError(e.message)
-      setTimeout(() => setError(null), 3000)
+      setTimeout(() => setError(null), 3200)
     }
   }, [roomId])
-
-  // ── Actions ──
 
   async function handleStart(houseRules) {
     try {
       const players = roomParticipants.map(p => ({ uid: p.uid, displayName: p.displayName, photoURL: p.photoURL || '' }))
-      const state = createGame(players, houseRules)
-      await writeUnoGame(roomId, state)
-    } catch (e) {
-      setError(e.message)
-    }
+      await writeUnoGame(roomId, createGame(players, houseRules))
+    } catch (e) { setError(e.message) }
   }
 
   function handlePlayCard(cardId) {
@@ -326,332 +589,234 @@ export default function UnoGame({ roomId, roomParticipants, currentUser, onClose
     if (!g) return
     const card = g.hands[currentUser.uid]?.find(c => c.id === cardId)
     if (!card) return
-
-    if (card.value === 'wild' || card.value === 'wilddraw4') {
-      // Need color pick first — just select it, ColorPicker appears
-      setSelectedCardId(cardId)
-      return
-    }
-
-    // 7-swap house rule
-    if (g.houseRules?.sevenSwap && card.value === '7') {
-      setSelectedCardId(cardId)
-      // Show swap target picker — handled separately
-      setSevenTarget('PICK')
-      return
-    }
-
+    if (card.value === 'wild' || card.value === 'wilddraw4') { setSelectedCardId(cardId); return }
+    if (g.houseRules?.sevenSwap && card.value === '7') { setSelectedCardId(cardId); setSevenTarget('PICK'); return }
     act(s => playCard(s, currentUser.uid, cardId))
     setSelectedCardId(null)
   }
 
   function handleColorPick(color) {
-    act(s => {
-      const g = s
-      const card = g.hands[currentUser.uid]?.find(c => c.id === selectedCardId)
-      if (!card) throw new Error('Card not found')
-      return playCard(g, currentUser.uid, selectedCardId, color)
-    })
+    if (!selectedCardId) {
+      // Starting wild — no card played, just pick the colour for first player
+      act(s => pickWildColor(s, currentUser.uid, color))
+    } else {
+      act(s => playCard(s, currentUser.uid, selectedCardId, color))
+    }
     setSelectedCardId(null)
   }
 
-  function handleDraw() {
-    act(s => drawCard(s, currentUser.uid))
-    setSelectedCardId(null)
-  }
-
-  function handlePass() {
-    act(s => passTurn(s, currentUser.uid))
-  }
-
-  function handleUno() {
-    act(s => callUno(s, currentUser.uid))
-  }
-
-  function handleCatchUno(targetUid) {
-    act(s => catchUno(s, currentUser.uid, targetUid))
-  }
-
-  function handleChallenge() {
-    act(s => challengeWD4(s, currentUser.uid))
-    setChallengePending(false)
-  }
+  function handleDraw()         { act(s => drawCard(s, currentUser.uid));   setSelectedCardId(null) }
+  function handlePass()         { act(s => passTurn(s, currentUser.uid)) }
+  function handleUno()          { act(s => callUno(s, currentUser.uid)) }
+  function handleCatchUno(tgt)  { act(s => catchUno(s, currentUser.uid, tgt)) }
+  function handleChallenge()    { act(s => challengeWD4(s, currentUser.uid)) }
+  function handleJumpIn(cardId) { act(s => jumpIn(s, currentUser.uid, cardId)) }
 
   function handleSevenSwap(toUid) {
     act(s => {
       const g = playCard(s, currentUser.uid, selectedCardId)
       return sevenSwap(g, currentUser.uid, toUid)
     })
-    setSelectedCardId(null)
-    setSevenTarget(null)
-  }
-
-  function handleJumpIn(cardId) {
-    act(s => jumpIn(s, currentUser.uid, cardId))
+    setSelectedCardId(null); setSevenTarget(null)
   }
 
   async function handlePlayAgain() {
     const players = roomParticipants.map(p => ({ uid: p.uid, displayName: p.displayName, photoURL: p.photoURL || '' }))
     const state = createGame(players, game?.houseRules || {})
-    // Carry forward scores
     state.scores = game?.scores || {}
     await writeUnoGame(roomId, state)
   }
 
-  async function handleClose() {
-    await deleteUnoGame(roomId)
-    onClose()
-  }
+  async function handleClose() { await deleteUnoGame(roomId); onClose() }
 
-  // ── Derived ──
-
-  if (loading) return (
-    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-dim)', fontFamily: 'Oswald', fontSize: '0.9rem', letterSpacing: '0.12em' }}>
-      LOADING…
-    </div>
-  )
-
-  // No game yet → lobby
-  if (!game) {
-    return <UnoLobby roomParticipants={roomParticipants} currentUser={currentUser} onStart={handleStart} onClose={onClose} />
-  }
-
-  // Game over
-  if (game.status === 'finished') {
-    return <GameOver game={game} currentUser={currentUser} onPlayAgain={handlePlayAgain} onClose={handleClose} />
-  }
-
-  const myHand = getMyHand(game, currentUser.uid)
-  const opponents = getOpponentCounts(game, currentUser.uid)
-  const myTurn = isMyTurn(game, currentUser.uid)
-  const needsColor = needsColorPick(game, currentUser.uid)
-  const topCard = game.discardPile?.[game.discardPile.length - 1]
-  const currentColor = game.currentColor
-  const currentPlayerName = game.players[game.order[game.currentIdx]]?.displayName
-
-  // Check challenge eligibility: last card was WD4 and it's now my turn
-  const lastCard = game.lastCard
-  const prevPlayerIdx = ((game.currentIdx - game.direction + game.order.length) % game.order.length)
-  const prevPlayerUid = game.order[prevPlayerIdx]
-  const canChallenge = myTurn && lastCard?.value === 'wilddraw4' && prevPlayerUid !== currentUser.uid && game.pendingDraw >= 4
-
-  // Jump-in eligibility
-  const jumpInCards = game.houseRules?.jumpIn && !myTurn
-    ? myHand.filter(c => c.color === topCard?.color && c.value === topCard?.value)
-    : []
-
-  // Determine which of my cards are playable
-  const playableIds = new Set(
-    myTurn
-      ? myHand.filter(c => {
-          try {
-            const { isPlayable: ip } = require('@/lib/uno')
-            return ip
-          } catch { return true }
-        }).map(c => c.id)
-      : []
-  )
-
-  // Simpler playable check inline
   function cardIsPlayable(card) {
-    if (!myTurn) return false
+    if (!game || !isMyTurn(game, currentUser.uid)) return false
     if (game.wildPickerUid) return false
     const { pendingDraw, houseRules: hr } = game
+    const topCard = game.discardPile?.[game.discardPile.length - 1]
     if (pendingDraw > 0 && !hr.stackDraw) return false
     if (pendingDraw > 0 && hr.stackDraw) {
       return (topCard.value === 'draw2' && card.value === 'draw2') ||
              (topCard.value === 'wilddraw4' && card.value === 'wilddraw4')
     }
     if (card.value === 'wild' || card.value === 'wilddraw4') return true
-    if (card.color === currentColor) return true
+    if (card.color === game.currentColor) return true
     if (card.value === topCard?.value) return true
     return false
   }
 
-  const drawnCard = game.drawnCardId != null
-    ? myHand.find(c => c.id === game.drawnCardId)
-    : null
+  if (loading) return (
+    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Oswald', color: 'var(--text-dim)', letterSpacing: '0.14em' }}>LOADING…</div>
+  )
+  if (!game)                   return <UnoLobby roomParticipants={roomParticipants} currentUser={currentUser} onStart={handleStart} onClose={onClose} />
+  if (game.status === 'finished') return <GameOver game={game} currentUser={currentUser} onPlayAgain={handlePlayAgain} onClose={handleClose} />
 
-  // Color dot indicator
-  const colorDotStyle = currentColor ? {
-    width: 14, height: 14, borderRadius: '50%',
-    background: COLOR_MAP[currentColor]?.bg,
-    boxShadow: `0 0 8px ${COLOR_MAP[currentColor]?.glow}`,
-    display: 'inline-block', flexShrink: 0,
-  } : null
+  const myHand     = getMyHand(game, currentUser.uid)
+  const opponents  = getOpponentCounts(game, currentUser.uid)
+  const myTurn     = isMyTurn(game, currentUser.uid)
+  const needsColor = needsColorPick(game, currentUser.uid)
+  const topCard    = game.discardPile?.[game.discardPile.length - 1]
+  const prevCard   = game.discardPile?.length > 1 ? game.discardPile[game.discardPile.length - 2] : null
+  const curColor   = game.currentColor
+  const curName    = game.players[game.order[game.currentIdx]]?.displayName
+  const prevIdx    = ((game.currentIdx - game.direction + game.order.length) % game.order.length)
+  const canChallenge = myTurn
+    && game.lastCard?.value === 'wilddraw4'
+    && game.order[prevIdx] !== currentUser.uid
+    && game.pendingDraw >= 4
+  const jumpInCards = game.houseRules?.jumpIn && !myTurn
+    ? myHand.filter(c => c.color === topCard?.color && c.value === topCard?.value)
+    : []
+  const ambientGlow = curColor
+    ? CC[curColor]?.glow
+    : topCard ? CC[topCard.color]?.glow : 'rgba(100,80,200,0.15)'
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative', background: '#0a0a12' }}>
+    <div style={{
+      flex: 1, display: 'flex', flexDirection: 'column',
+      overflow: 'hidden', position: 'relative',
+      background: 'radial-gradient(ellipse at 50% 30%, #18082e 0%, #080814 70%)',
+    }}>
+      <style>{UNO_STYLES}</style>
 
-      {/* Error toast */}
       {error && (
-        <div style={{ position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 200, background: 'rgba(231,76,60,0.9)', padding: '8px 20px', borderRadius: 10, fontFamily: 'Oswald', fontSize: '0.82rem', color: '#fff', letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>
-          {error}
-        </div>
+        <div className="uno-fadein" style={{
+          position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)',
+          zIndex: 200, background: 'rgba(192,57,43,0.96)',
+          padding: '8px 22px', borderRadius: 10,
+          fontFamily: 'Oswald', fontSize: '0.82rem', color: '#fff',
+          letterSpacing: '0.06em', whiteSpace: 'nowrap',
+          boxShadow: '0 4px 20px rgba(192,57,43,0.5)',
+        }}>{error}</div>
       )}
 
-      {/* Color picker modal */}
       {needsColor && <ColorPicker onPick={handleColorPick} />}
 
-      {/* Seven-swap target picker */}
       {sevenTarget === 'PICK' && (
-        <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 100, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 20 }}>
+        <div style={{
+          position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.88)', zIndex: 100,
+          backdropFilter: 'blur(5px)',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 20,
+        }}>
           <div style={{ fontFamily: 'Oswald', fontSize: '1.2rem', color: '#fff', letterSpacing: '0.15em' }}>SWAP HANDS WITH</div>
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center' }}>
+          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', justifyContent: 'center' }}>
             {opponents.map(op => (
-              <button key={op.uid} onClick={() => handleSevenSwap(op.uid)}
-                style={{ padding: '10px 20px', borderRadius: 10, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', fontFamily: 'Oswald', fontSize: '0.85rem', cursor: 'pointer' }}>
-                {op.displayName} ({op.count} cards)
+              <button key={op.uid} onClick={() => handleSevenSwap(op.uid)} style={{ padding: '12px 22px', borderRadius: 12, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', fontFamily: 'Oswald', fontSize: '0.85rem', cursor: 'pointer' }}>
+                {op.displayName} <span style={{ color: 'var(--text-dim)', fontSize: '0.72rem' }}>({op.count} cards)</span>
               </button>
             ))}
           </div>
-          <button onClick={() => setSevenTarget(null)} style={{ fontSize: '0.75rem', color: 'var(--text-dim)', background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
+          <button onClick={() => setSevenTarget(null)} style={{ fontSize: '0.72rem', color: 'var(--text-dim)', background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
         </div>
       )}
 
-      {/* ── Top bar ── */}
-      <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: 'rgba(10,10,18,0.97)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-        <div style={{ fontFamily: 'Oswald', fontWeight: 700, fontSize: '1.2rem', letterSpacing: '0.2em', background: 'linear-gradient(135deg,#e74c3c,#f1c40f,#27ae60,#2980b9)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>UNO</div>
-
+      {/* Top bar */}
+      <div style={{
+        flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '9px 16px', background: 'rgba(8,4,18,0.97)',
+        borderBottom: '1px solid rgba(255,255,255,0.06)',
+      }}>
+        <div style={{ fontFamily: 'Oswald', fontWeight: 800, fontSize: '1.3rem', letterSpacing: '0.22em', background: WILD_BG, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>UNO</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {currentColor && colorDotStyle && <div style={colorDotStyle} title={`Active color: ${currentColor}`} />}
-          <div style={{ fontFamily: 'Oswald', fontSize: '0.7rem', color: myTurn ? 'gold' : 'var(--text-dim)', letterSpacing: '0.08em' }}>
-            {myTurn ? '👑 YOUR TURN' : `${currentPlayerName}'s turn`}
-          </div>
+          {curColor && <div style={{ width: 12, height: 12, borderRadius: '50%', background: CC[curColor]?.bg, boxShadow: `0 0 8px ${CC[curColor]?.glow}`, flexShrink: 0 }} />}
+          <span style={{ fontFamily: 'Oswald', fontSize: '0.68rem', color: myTurn ? 'gold' : 'var(--text-dim)', letterSpacing: '0.08em' }}>
+            {myTurn ? '⚡ YOUR TURN' : `${curName}'s turn`}
+          </span>
           {game.pendingDraw > 0 && (
-            <div style={{ fontFamily: 'Oswald', fontSize: '0.65rem', color: 'var(--pink)', background: 'rgba(231,76,60,0.15)', border: '1px solid rgba(231,76,60,0.3)', borderRadius: 6, padding: '2px 8px' }}>
-              +{game.pendingDraw} pending
-            </div>
+            <span style={{ fontFamily: 'Oswald', fontSize: '0.62rem', color: '#ff6b6b', background: 'rgba(192,57,43,0.15)', border: '1px solid rgba(192,57,43,0.3)', borderRadius: 5, padding: '2px 7px' }}>+{game.pendingDraw}</span>
           )}
-          <button onClick={() => setShowLog(l => !l)} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, padding: '4px 8px', color: 'var(--text-dim)', fontSize: '0.65rem', cursor: 'pointer', fontFamily: 'Oswald' }}>
+          <button onClick={() => setShowLog(l => !l)} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 6, padding: '4px 8px', color: 'var(--text-dim)', fontSize: '0.62rem', cursor: 'pointer', fontFamily: 'Oswald', letterSpacing: '0.06em' }}>
             {showLog ? 'BOARD' : 'LOG'}
           </button>
-          <button onClick={handleClose} style={{ width: 28, height: 28, borderRadius: 6, background: 'rgba(233,30,99,0.1)', border: '1px solid rgba(233,30,99,0.3)', color: 'var(--pink)', cursor: 'pointer', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+          <button onClick={handleClose} style={{ width: 28, height: 28, borderRadius: 6, background: 'rgba(233,30,99,0.1)', border: '1px solid rgba(233,30,99,0.25)', color: 'var(--pink)', cursor: 'pointer', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
         </div>
       </div>
 
       {showLog ? (
-        /* ── Log view ── */
-        <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 3 }}>
           {[...game.log].reverse().map((entry, i) => (
-            <div key={i} style={{ fontFamily: 'monospace', fontSize: '0.72rem', color: i === 0 ? '#fff' : 'var(--text-dim)', padding: '4px 8px', borderRadius: 6, background: i === 0 ? 'rgba(255,255,255,0.05)' : 'transparent' }}>
+            <div key={i} style={{ fontFamily: 'monospace', fontSize: '0.7rem', color: i === 0 ? '#fff' : 'var(--text-dim)', padding: '3px 8px', borderRadius: 5, background: i === 0 ? 'rgba(255,255,255,0.04)' : 'transparent' }}>
               {entry}
             </div>
           ))}
         </div>
       ) : (
-        /* ── Board ── */
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
-          {/* Opponents row */}
-          <div style={{ flexShrink: 0, display: 'flex', gap: 10, padding: '12px 16px', overflowX: 'auto', borderBottom: '1px solid rgba(255,255,255,0.04)', scrollbarWidth: 'none' }}>
+          {/* Opponents */}
+          <div style={{ flexShrink: 0, display: 'flex', gap: 8, padding: '10px 14px', overflowX: 'auto', borderBottom: '1px solid rgba(255,255,255,0.04)', scrollbarWidth: 'none', background: 'rgba(0,0,0,0.28)' }}>
             {opponents.map(op => (
-              <OpponentSeat
-                key={op.uid}
-                opponent={op}
-                isCurrent={game.order[game.currentIdx] === op.uid}
-                callUnoEnabled={true}
-                unoEligible={!!game.unoPenaltyEligible?.[op.uid]}
-                onCatchUno={handleCatchUno}
-              />
+              <OpponentSeat key={op.uid} opponent={op} isCurrent={game.order[game.currentIdx] === op.uid} unoEligible={!!game.unoPenaltyEligible?.[op.uid]} onCatchUno={handleCatchUno} />
             ))}
           </div>
 
-          {/* Center play area */}
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 32, padding: 16 }}>
+          {/* Centre: draw pile / discard / actions */}
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 28, padding: '14px 20px', position: 'relative' }}>
+            <div style={{
+              position: 'absolute', width: 180, height: 100, borderRadius: '50%',
+              background: ambientGlow, filter: 'blur(44px)',
+              pointerEvents: 'none', opacity: 0.55,
+            }} />
 
-            {/* Draw pile */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-              <div onClick={myTurn && !game.wildPickerUid ? handleDraw : undefined}
-                style={{ cursor: myTurn && !game.wildPickerUid ? 'pointer' : 'default', position: 'relative' }}>
-                <CardBack />
-                {game.drawPile?.length > 0 && (
-                  <div style={{ position: 'absolute', top: -8, right: -8, background: 'rgba(0,0,0,0.8)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '50%', width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Oswald', fontSize: '0.55rem', color: '#fff' }}>
-                    {game.drawPile.length}
-                  </div>
-                )}
-              </div>
-              <div style={{ fontFamily: 'Oswald', fontSize: '0.6rem', color: 'var(--text-dim)', letterSpacing: '0.08em' }}>DRAW</div>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, zIndex: 1 }}>
+              <DrawPileStack count={game.drawPile?.length || 0} enabled={myTurn && !game.wildPickerUid} onClick={handleDraw} />
+              <span style={{ fontFamily: 'Oswald', fontSize: '0.58rem', color: 'var(--text-dim)', letterSpacing: '0.1em' }}>DRAW</span>
             </div>
 
-            {/* Discard pile */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-              <div style={{ position: 'relative' }}>
-                {topCard && <CardFace card={topCard} />}
-                {currentColor && topCard?.color === 'wild' && colorDotStyle && (
-                  <div style={{ ...colorDotStyle, position: 'absolute', bottom: -5, right: -5, width: 16, height: 16 }} />
-                )}
-              </div>
-              <div style={{ fontFamily: 'Oswald', fontSize: '0.6rem', color: 'var(--text-dim)', letterSpacing: '0.08em' }}>DISCARD</div>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, zIndex: 1 }}>
+              <DiscardPileArea topCard={topCard} prevCard={prevCard} currentColor={curColor} />
+              <span style={{ fontFamily: 'Oswald', fontSize: '0.58rem', color: 'var(--text-dim)', letterSpacing: '0.1em' }}>DISCARD</span>
             </div>
 
-            {/* Action column */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'center' }}>
-              {/* UNO button */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'center', zIndex: 1 }}>
               {myHand.length === 1 && (
-                <button onClick={handleUno}
-                  style={{ padding: '8px 18px', borderRadius: 10, background: game.unoCalledBy?.[currentUser.uid] ? 'rgba(0,255,136,0.15)' : 'linear-gradient(135deg,#e74c3c,#f1c40f)', border: 'none', color: '#fff', fontFamily: 'Oswald', fontSize: '0.85rem', fontWeight: 700, letterSpacing: '0.15em', cursor: 'pointer', boxShadow: '0 0 16px rgba(231,76,60,0.4)' }}>
+                <button
+                  onClick={handleUno}
+                  className={!game.unoCalledBy?.[currentUser.uid] ? 'uno-blink' : ''}
+                  style={{
+                    padding: '9px 20px', borderRadius: 10,
+                    background: game.unoCalledBy?.[currentUser.uid] ? 'rgba(0,255,136,0.12)' : 'linear-gradient(135deg,#C0392B,#D4AC0D)',
+                    border: game.unoCalledBy?.[currentUser.uid] ? '1px solid rgba(0,255,136,0.3)' : 'none',
+                    color: '#fff', fontFamily: 'Oswald', fontSize: '0.88rem',
+                    fontWeight: 700, letterSpacing: '0.16em', cursor: 'pointer',
+                    boxShadow: game.unoCalledBy?.[currentUser.uid] ? 'none' : '0 0 20px rgba(192,57,43,0.55)',
+                  }}
+                >
                   {game.unoCalledBy?.[currentUser.uid] ? '✅ UNO!' : '🔔 UNO!'}
                 </button>
               )}
-
-              {/* Pass button (only after drawing) */}
               {myTurn && game.drawnCardId != null && (
-                <button onClick={handlePass}
-                  style={{ padding: '6px 16px', borderRadius: 8, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: 'var(--text-dim)', fontFamily: 'Oswald', fontSize: '0.75rem', cursor: 'pointer', letterSpacing: '0.1em' }}>
-                  PASS
-                </button>
+                <button onClick={handlePass} style={{ padding: '7px 16px', borderRadius: 8, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-dim)', fontFamily: 'Oswald', fontSize: '0.72rem', cursor: 'pointer', letterSpacing: '0.1em' }}>PASS</button>
               )}
-
-              {/* Challenge WD4 */}
               {canChallenge && (
-                <button onClick={handleChallenge}
-                  style={{ padding: '6px 14px', borderRadius: 8, background: 'rgba(231,76,60,0.15)', border: '1px solid rgba(231,76,60,0.4)', color: 'var(--pink)', fontFamily: 'Oswald', fontSize: '0.72rem', cursor: 'pointer', letterSpacing: '0.08em' }}>
-                  ⚡ CHALLENGE +4
-                </button>
+                <button onClick={handleChallenge} style={{ padding: '7px 14px', borderRadius: 8, background: 'rgba(192,57,43,0.14)', border: '1px solid rgba(192,57,43,0.38)', color: '#ff6b6b', fontFamily: 'Oswald', fontSize: '0.7rem', cursor: 'pointer', letterSpacing: '0.08em' }}>⚡ CHALLENGE +4</button>
               )}
             </div>
           </div>
 
           {/* My hand */}
-          <div style={{ flexShrink: 0, borderTop: '1px solid rgba(255,255,255,0.06)', padding: '12px 8px', background: 'rgba(10,10,18,0.9)' }}>
-            <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4, alignItems: 'flex-end', scrollbarWidth: 'none', minHeight: 92, justifyContent: myHand.length < 8 ? 'center' : 'flex-start' }}>
-              {myHand.map(card => {
-                const playable = cardIsPlayable(card)
-                const isSelected = selectedCardId === card.id
-                const isDrawn = card.id === game.drawnCardId
-                return (
-                  <div key={card.id} style={{ position: 'relative', flexShrink: 0 }}>
-                    <CardFace
-                      card={card}
-                      playable={playable || (game.drawnCardId === card.id)}
-                      selected={isSelected}
-                      onClick={playable || isDrawn ? () => handlePlayCard(card.id) : undefined}
-                    />
-                    {isDrawn && (
-                      <div style={{ position: 'absolute', top: -8, left: '50%', transform: 'translateX(-50%)', fontSize: '0.5rem', color: 'var(--green)', background: 'rgba(0,255,136,0.15)', border: '1px solid rgba(0,255,136,0.3)', borderRadius: 4, padding: '1px 4px', whiteSpace: 'nowrap', fontFamily: 'Oswald' }}>NEW</div>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-
-            {/* Jump-in cards when not my turn */}
+          <div style={{ flexShrink: 0, borderTop: '1px solid rgba(255,255,255,0.06)', paddingInline: 12, paddingBottom: 8, background: 'rgba(6,4,16,0.96)' }}>
+            <HandFan
+              cards={myHand}
+              selectedId={selectedCardId}
+              drawnId={game.drawnCardId}
+              onCardClick={handlePlayCard}
+              cardIsPlayable={cardIsPlayable}
+            />
             {jumpInCards.length > 0 && (
-              <div style={{ marginTop: 8, display: 'flex', gap: 6, justifyContent: 'center', alignItems: 'center' }}>
-                <span style={{ fontFamily: 'Oswald', fontSize: '0.6rem', color: 'gold', letterSpacing: '0.1em' }}>JUMP IN:</span>
+              <div style={{ display: 'flex', gap: 6, justifyContent: 'center', alignItems: 'center', marginBottom: 6 }}>
+                <span style={{ fontFamily: 'Oswald', fontSize: '0.58rem', color: 'gold', letterSpacing: '0.1em' }}>JUMP IN:</span>
                 {jumpInCards.map(card => (
                   <CardFace key={card.id} card={card} small playable onClick={() => handleJumpIn(card.id)} />
                 ))}
               </div>
             )}
-
-            {/* Hand count */}
-            <div style={{ textAlign: 'center', marginTop: 6, fontFamily: 'Oswald', fontSize: '0.65rem', color: 'var(--text-dim)', letterSpacing: '0.1em' }}>
+            <div style={{ textAlign: 'center', fontFamily: 'Oswald', fontSize: '0.62rem', color: 'var(--text-dim)', letterSpacing: '0.1em', paddingBottom: 2 }}>
               YOUR HAND ({myHand.length})
-              {!myTurn && <span style={{ marginLeft: 8, color: 'rgba(255,255,255,0.15)' }}>• Wait for your turn</span>}
+              {!myTurn && <span style={{ marginLeft: 8, opacity: 0.38 }}>• Wait for your turn</span>}
             </div>
           </div>
+
         </div>
       )}
     </div>

@@ -108,6 +108,7 @@ export function createGame(players, houseRules = {}) {
     pendingDraw,                 // accumulated draw count waiting for next player
     currentColor,                // active color (null = waiting for wild pick)
     wildPickerUid: topCard.value === 'wild' ? order[0] : null,
+    isStartingWild: topCard.value === 'wild', // first player picks colour but keeps their turn
     lastCard: topCard,
     unoCalledBy: {},             // { uid: true } — who pressed UNO
     unoPenaltyEligible: {},      // { uid: true } — who can be caught
@@ -295,6 +296,7 @@ export function playCard(state, uid, cardId, chosenColor = null) {
 
     case 'wilddraw4': {
       if (chosenColor) {
+        // preWD4Color already stored when card was first played (no-color branch)
         if (s.houseRules.stackDraw) {
           log.push(`+4 stacked! Pending: ${s.pendingDraw + 4}`)
           s = { ...s, pendingDraw: s.pendingDraw + 4, currentColor: chosenColor, wildPickerUid: null, log }
@@ -315,7 +317,8 @@ export function playCard(state, uid, cardId, chosenColor = null) {
           s = { ...s, log }
         }
       } else {
-        s = { ...s, wildPickerUid: uid, currentColor: null, log }
+        // Store the active colour BEFORE it becomes null — needed for WD4 challenge legality check
+        s = { ...s, wildPickerUid: uid, currentColor: null, preWD4Color: state.currentColor, log }
       }
       break
     }
@@ -350,6 +353,11 @@ export function pickWildColor(state, uid, color) {
   let s = { ...state, currentColor: color, wildPickerUid: null, updatedAt: Date.now() }
 
   const log = [...s.log, `🎨 ${s.players[uid].displayName} chose ${color}`]
+
+  // Starting wild: first player just picks the colour — it's still their turn to play
+  if (state.isStartingWild) {
+    return { ...s, isStartingWild: false, log }
+  }
 
   if (topCard.value === 'wilddraw4' && !s.houseRules.stackDraw) {
     const targetUid = s.order[nextIdx(s)]
@@ -459,11 +467,11 @@ export function challengeWD4(state, challengerUid) {
 
   if (topCard.value !== 'wilddraw4') throw new Error('Last card was not Wild Draw 4')
 
-  // Check if player had a playable card of current color (before WD4 was played)
-  // We check their current hand (WD4 already played, so original hand - 1 WD4 card)
-  const prevColor = state.discardPile[state.discardPile.length - 2]?.color
+  // Check if player had a card matching the colour that was active when WD4 was played.
+  // Use preWD4Color (stored at play time) — fallback to card before WD4 in discard pile.
+  const preWD4Color = state.preWD4Color || state.discardPile[state.discardPile.length - 2]?.color
   const hand = state.hands[playedByUid]
-  const hadPlayable = prevColor && hand.some(c => c.color === prevColor)
+  const hadPlayable = preWD4Color && preWD4Color !== 'wild' && hand.some(c => c.color === preWD4Color)
 
   let s = ensureDrawPile(state)
   const log = [...s.log]
