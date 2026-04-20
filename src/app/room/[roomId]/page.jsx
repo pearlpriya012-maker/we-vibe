@@ -967,6 +967,7 @@ export default function RoomPage() {
   const [leftCollapsed, setLeftCollapsed] = useState(false)
   const [videoFocus, setVideoFocus] = useState(false)
   const [focusLandscape, setFocusLandscape] = useState(true)
+  const focusContainerRef = useRef(null)
   const [isMobile, setIsMobile] = useState(false)
   const [volume, setVolume] = useState(100)
   const [muted, setMuted] = useState(false)
@@ -1131,6 +1132,22 @@ export default function RoomPage() {
     document.addEventListener('mousedown', handleClick)
     document.addEventListener('touchstart', handleClick)
     return () => { document.removeEventListener('mousedown', handleClick); document.removeEventListener('touchstart', handleClick) }
+  }, [])
+
+  // ─── Sync focus state when user exits fullscreen via Escape ───
+  useEffect(() => {
+    function onFsChange() {
+      if (!document.fullscreenElement) {
+        setVideoFocus(false)
+        setFocusLandscape(true)
+      }
+    }
+    document.addEventListener('fullscreenchange', onFsChange)
+    document.addEventListener('webkitfullscreenchange', onFsChange)
+    return () => {
+      document.removeEventListener('fullscreenchange', onFsChange)
+      document.removeEventListener('webkitfullscreenchange', onFsChange)
+    }
   }, [])
 
   // ─── Tick: update progress bar every 500ms ───
@@ -2532,8 +2549,8 @@ export default function RoomPage() {
           : { position: 'fixed', left: '-2000px', top: '-2000px', width: 320, height: 180, pointerEvents: 'none', zIndex: -1 })
       : (!isMobile && videoFocus)
         ? focusLandscape
-          ? { position: 'relative', width: 'min(100%, calc((100vh - 270px) * 1.778))', aspectRatio: '16/9', overflow: 'hidden', flexShrink: 0, borderRadius: 14 }
-          : { position: 'relative', width: 'min(50%, calc((100vh - 270px) * 0.5625))', aspectRatio: '9/16', overflow: 'hidden', flexShrink: 0, borderRadius: 14 }
+          ? { position: 'relative', width: '100%', height: '100%', overflow: 'hidden', flexShrink: 0 }
+          : { position: 'relative', height: '100%', aspectRatio: '9/16', flexShrink: 0, margin: '0 auto' }
         : { position: 'relative', width: '100%', paddingTop: '56.25%', overflow: 'hidden', flexShrink: 0, borderRadius: 14 }
     }>
       <YouTube
@@ -3125,7 +3142,9 @@ export default function RoomPage() {
           <button onClick={async () => { 
             const newMode = !musicMode
             setMusicMode(newMode)
+            if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {})
             setVideoFocus(false)
+            setFocusLandscape(true)
             await updateMusicMode(roomId, newMode)
           }} style={{ display: 'flex', alignItems: 'center', gap: 6, background: musicMode ? 'rgba(0,255,136,0.08)' : 'rgba(52,152,219,0.08)', border: `1px solid ${musicMode ? 'rgba(0,255,136,0.3)' : 'rgba(52,152,219,0.3)'}`, borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontFamily: 'Oswald', color: musicMode ? 'var(--green)' : 'var(--cyan)', fontSize: '0.78rem', letterSpacing: '0.08em' }}>
             {musicMode ? '🎵 MUSIC' : '📺 VIDEO'}
@@ -3185,15 +3204,35 @@ export default function RoomPage() {
             <>
               {/* Video mode: player + focus button */}
               {!musicMode && (
-                <div style={{ position: 'relative', width: videoFocus ? (focusLandscape ? 'min(100%, calc((100vh - 270px) * 1.778))' : 'min(50%, calc((100vh - 270px) * 0.5625))') : '100%', maxWidth: videoFocus ? undefined : 700, flexShrink: 0, borderRadius: videoFocus ? 8 : 14, overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.8)' }}>
+                <div
+                  ref={focusContainerRef}
+                  style={videoFocus
+                    ? { position: 'relative', width: '100%', height: '100%', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 0, overflow: 'hidden' }
+                    : { position: 'relative', width: '100%', maxWidth: 700, flexShrink: 0, borderRadius: 14, overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.8)' }
+                  }>
                   {ytPlayerEl}
                   {/* Focus toggle */}
-                  <button onClick={() => { setVideoFocus(f => !f); setFocusLandscape(true) }} style={{ position: 'absolute', top: 10, right: 10, zIndex: 10, display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(0,0,0,0.65)', border: `1px solid ${videoFocus ? 'rgba(52,152,219,0.7)' : 'rgba(255,255,255,0.25)'}`, borderRadius: 8, padding: '5px 12px', cursor: 'pointer', fontFamily: 'Oswald', color: videoFocus ? 'var(--cyan)' : '#fff', fontSize: '0.72rem', letterSpacing: '0.1em', transition: 'all 0.2s', backdropFilter: 'blur(4px)' }}>
+                  <button
+                    onClick={() => {
+                      if (!videoFocus) {
+                        focusContainerRef.current?.requestFullscreen?.().catch(() => {})
+                        setVideoFocus(true)
+                        setFocusLandscape(true)
+                      } else {
+                        document.exitFullscreen?.().catch(() => {})
+                        setVideoFocus(false)
+                        setFocusLandscape(true)
+                      }
+                    }}
+                    style={{ position: 'absolute', top: 10, right: 10, zIndex: 10, display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(0,0,0,0.65)', border: `1px solid ${videoFocus ? 'rgba(52,152,219,0.7)' : 'rgba(255,255,255,0.25)'}`, borderRadius: 8, padding: '5px 12px', cursor: 'pointer', fontFamily: 'Oswald', color: videoFocus ? 'var(--cyan)' : '#fff', fontSize: '0.72rem', letterSpacing: '0.1em', transition: 'all 0.2s', backdropFilter: 'blur(4px)' }}>
                     {videoFocus ? '✕ EXIT FOCUS' : '⛶ FOCUS'}
                   </button>
                   {/* Orientation toggle — only visible in focus mode */}
                   {videoFocus && (
-                    <button onClick={() => setFocusLandscape(l => !l)} title={focusLandscape ? 'Switch to portrait' : 'Switch to landscape'} style={{ position: 'absolute', top: 10, right: videoFocus ? 130 : undefined, left: videoFocus ? undefined : 10, zIndex: 10, display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(0,0,0,0.65)', border: `1px solid ${focusLandscape ? 'rgba(255,255,255,0.25)' : 'rgba(249,115,22,0.7)'}`, borderRadius: 8, padding: '5px 10px', cursor: 'pointer', fontFamily: 'Oswald', color: focusLandscape ? '#fff' : '#f97316', fontSize: '0.68rem', letterSpacing: '0.08em', backdropFilter: 'blur(4px)', transition: 'all 0.2s' }}>
+                    <button
+                      onClick={() => setFocusLandscape(l => !l)}
+                      title={focusLandscape ? 'Switch to portrait' : 'Switch to landscape'}
+                      style={{ position: 'absolute', top: 10, right: 136, zIndex: 10, display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(0,0,0,0.65)', border: `1px solid ${focusLandscape ? 'rgba(255,255,255,0.3)' : 'rgba(249,115,22,0.7)'}`, borderRadius: 8, padding: '5px 10px', cursor: 'pointer', fontFamily: 'Oswald', color: focusLandscape ? '#fff' : '#f97316', fontSize: '0.68rem', letterSpacing: '0.08em', backdropFilter: 'blur(4px)', transition: 'all 0.2s' }}>
                       {focusLandscape ? '↕ PORTRAIT' : '↔ LANDSCAPE'}
                     </button>
                   )}
@@ -3250,7 +3289,7 @@ export default function RoomPage() {
                 </div>
               ) : (
                 // Video mode controls
-                <div style={{ width: '100%', maxWidth: videoFocus ? (focusLandscape ? 'min(100%, calc((100vh - 270px) * 1.778))' : 'min(50%, calc((100vh - 270px) * 0.5625))') : 500 }}>
+                <div style={{ width: '100%', maxWidth: videoFocus ? (focusLandscape ? '100%' : 'calc(100vh * 9 / 16)') : 500 }}>
                   <div style={{ textAlign: 'center', marginBottom: 14 }}>
                     <div style={{ fontWeight: 600, fontSize: '1rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{room.currentTrack.title}</div>
                     <div style={{ color: 'var(--text-dim)', fontSize: '0.875rem', marginTop: 4 }}>{room.currentTrack.channelTitle}</div>
