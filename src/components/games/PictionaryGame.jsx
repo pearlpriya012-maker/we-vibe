@@ -9,6 +9,7 @@ import {
 import {
   writePictionaryGame, updatePictionaryGame, subscribePictionaryGame, deletePictionaryGame,
   addStroke, clearCanvas, subscribeCanvas,
+  writePictionaryInvite, respondToPictionaryInvite, deletePictionaryInvite,
 } from '@/lib/pictionaryFirestore'
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
@@ -371,6 +372,94 @@ function EventLog({ log }) {
 
 // ─── Lobby ─────────────────────────────────────────────────────────────────────
 
+function InviteWaitingRoom({ invite, roomParticipants, currentUser, roomId, onStartGame, onCancel }) {
+  const isHost = invite.initiatorUid === currentUser.uid
+  const [secs, setSecs] = useState(Math.max(0, Math.ceil((invite.expiresAt - Date.now()) / 1000)))
+
+  useEffect(() => {
+    const iv = setInterval(() => {
+      const r = Math.max(0, Math.ceil((invite.expiresAt - Date.now()) / 1000))
+      setSecs(r); if (r <= 0) clearInterval(iv)
+    }, 500)
+    return () => clearInterval(iv)
+  }, [invite.expiresAt])
+
+  useEffect(() => {
+    if (!isHost) return
+    const remaining = invite.expiresAt - Date.now()
+    if (remaining <= 0) { handleExpired(); return }
+    const t = setTimeout(handleExpired, remaining)
+    return () => clearTimeout(t)
+  }, [invite.expiresAt])
+
+  function handleExpired() {
+    const accepted = Object.entries(invite.responses || {}).filter(([,r])=>r==='accepted').map(([uid])=>uid)
+    if (accepted.length >= 2) onStartGame(accepted)
+    else deletePictionaryInvite(roomId)
+  }
+
+  const responses = invite.responses || {}
+  const acceptedUids = Object.entries(responses).filter(([,r])=>r==='accepted').map(([uid])=>uid)
+  const canStart = acceptedUids.length >= 2
+  const pct = Math.max(0, (secs / 45) * 100)
+  const barColor = secs <= 10 ? '#e74c3c' : secs <= 20 ? '#f39c12' : '#00ff88'
+
+  return (
+    <div style={{ flex:1, overflowY:'auto', display:'flex', flexDirection:'column', alignItems:'center', padding:'24px 20px', gap:20 }}>
+      <div style={{ fontFamily:'Oswald', fontSize:'2.4rem', fontWeight:800, letterSpacing:'0.22em', color:'#fff', textShadow:'0 0 30px rgba(99,102,241,0.6)' }}>🎨 PICTIONARY</div>
+
+      <div style={{ width:'100%', maxWidth:420 }}>
+        <div style={{ fontFamily:'Oswald', fontSize:'0.72rem', color:'rgba(255,255,255,0.4)', letterSpacing:'0.1em', marginBottom:6 }}>
+          {isHost ? 'Waiting for players to respond…' : `${invite.initiatorName} invited you to play`}
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+          <div style={{ flex:1, height:6, borderRadius:3, background:'rgba(255,255,255,0.08)', overflow:'hidden' }}>
+            <div style={{ height:'100%', width:`${pct}%`, background:barColor, borderRadius:3, transition:'width .5s linear, background .5s' }} />
+          </div>
+          <span style={{ fontFamily:'Oswald', fontSize:'0.8rem', color:barColor, minWidth:30, textAlign:'right' }}>{secs}s</span>
+        </div>
+      </div>
+
+      <div style={{ width:'100%', maxWidth:420 }}>
+        <div style={{ fontFamily:'Oswald', fontSize:'0.65rem', color:'rgba(255,255,255,0.35)', letterSpacing:'0.14em', marginBottom:10 }}>RESPONSES ({acceptedUids.length} accepted)</div>
+        {roomParticipants.map(p => {
+          const resp = responses[p.uid] || 'pending'
+          const color = resp==='accepted'?'#00ff88':resp==='declined'?'#ff6b6b':'rgba(255,255,255,0.35)'
+          const icon  = resp==='accepted'?'✅':resp==='declined'?'❌':'⏳'
+          return (
+            <div key={p.uid} style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 14px', borderRadius:10, background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)', marginBottom:6 }}>
+              {p.photoURL ? <img src={p.photoURL} alt="" style={{ width:28, height:28, borderRadius:'50%', objectFit:'cover' }} /> : <div style={{ width:28, height:28, borderRadius:'50%', background:'linear-gradient(135deg,#6366f1,#8b5cf6)', display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'Oswald', fontWeight:700, fontSize:'0.75rem', color:'#fff' }}>{(p.displayName||'?')[0].toUpperCase()}</div>}
+              <span style={{ fontFamily:'Oswald', fontSize:'0.82rem', color: p.uid===currentUser.uid?'#a5b4fc':'#fff', flex:1 }}>{p.displayName}</span>
+              {p.uid===invite.initiatorUid && <span style={{ fontFamily:'Oswald', fontSize:'0.58rem', color:'gold', marginRight:4 }}>HOST</span>}
+              <span style={{ color }}>{icon}</span>
+            </div>
+          )
+        })}
+      </div>
+
+      <div style={{ display:'flex', gap:12, paddingBottom:16 }}>
+        {isHost ? (
+          <>
+            <button onClick={onCancel} style={{ padding:'11px 22px', borderRadius:10, background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.1)', color:'rgba(255,255,255,0.4)', fontFamily:'Oswald', fontSize:'0.82rem', cursor:'pointer' }}>Cancel</button>
+            <button onClick={() => onStartGame(acceptedUids)} disabled={!canStart}
+              style={{ padding:'11px 32px', borderRadius:10, border:'none', fontFamily:'Oswald', fontSize:'0.9rem', fontWeight:700, letterSpacing:'0.12em', cursor:canStart?'pointer':'not-allowed',
+                background: canStart?'linear-gradient(135deg,#6366f1,#8b5cf6)':'rgba(255,255,255,0.05)',
+                color: canStart?'#fff':'rgba(255,255,255,0.3)', opacity: canStart?1:0.5 }}>
+              Start ({acceptedUids.length})
+            </button>
+          </>
+        ) : (
+          <div style={{ fontFamily:'Oswald', fontSize:'0.78rem', color:'rgba(255,255,255,0.4)', textAlign:'center' }}>
+            {responses[currentUser.uid]==='accepted' ? '✅ You accepted — waiting for host' : '❌ You declined'}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Lobby ─────────────────────────────────────────────────────────────────────
+
 function Lobby({ roomParticipants, currentUser, roomId, onClose }) {
   const [totalRounds, setTotalRounds] = useState(3)
   const [turnSeconds, setTurnSeconds] = useState(80)
@@ -378,7 +467,18 @@ function Lobby({ roomParticipants, currentUser, roomId, onClose }) {
 
   async function handleStart() {
     const players = roomParticipants.map(p => ({ uid: p.uid, displayName: p.displayName, photoURL: p.photoURL || '' }))
-    await writePictionaryGame(roomId, createGame(players, { totalRounds, turnSeconds }))
+    const responses = {}
+    for (const p of roomParticipants) responses[p.uid] = p.uid === currentUser.uid ? 'accepted' : 'pending'
+    await writePictionaryInvite(roomId, {
+      initiatorUid: currentUser.uid,
+      initiatorName: currentUser.displayName || 'Someone',
+      initiatorPhoto: currentUser.photoURL || '',
+      gameName: 'Pictionary',
+      settings: { totalRounds, turnSeconds },
+      sentAt: Date.now(),
+      expiresAt: Date.now() + 45000,
+      responses,
+    })
   }
 
   return (
@@ -429,7 +529,7 @@ function Lobby({ roomParticipants, currentUser, roomId, onClose }) {
           color: canStart ? '#fff' : 'rgba(255,255,255,0.25)',
           fontFamily:'Oswald', fontSize:'0.92rem', fontWeight:700, letterSpacing:'0.12em',
           cursor: canStart ? 'pointer' : 'not-allowed', boxShadow: canStart ? '0 0 24px rgba(99,102,241,0.4)' : 'none' }}>
-          🎨 START GAME
+          � INVITE PLAYERS
         </button>
       </div>
       {!canStart && <div style={{ fontSize:'0.72rem', color:'rgba(255,255,255,0.35)' }}>Need at least 2 players</div>}
@@ -563,7 +663,7 @@ function GameOverScreen({ game, currentUser, onPlayAgain, onClose }) {
 
 // ─── Main PictionaryGame ───────────────────────────────────────────────────────
 
-export default function PictionaryGame({ roomId, roomParticipants, currentUser, onClose }) {
+export default function PictionaryGame({ roomId, roomParticipants, currentUser, invite, onClose }) {
   const [game, setGame]               = useState(null)
   const [canvasData, setCanvasData]   = useState({ strokes: {}, clearedAt: 0 })
   const [pendingStrokes, setPending]  = useState([])
@@ -632,6 +732,23 @@ export default function PictionaryGame({ roomId, roomParticipants, currentUser, 
 
   // ── Play again / close ──
 
+  // ── Invite actions ──
+
+  async function handleStartGame(acceptedUids) {
+    const players = roomParticipants
+      .filter(p => acceptedUids.includes(p.uid))
+      .map(p => ({ uid: p.uid, displayName: p.displayName, photoURL: p.photoURL || '' }))
+    if (players.length < 2) return
+    const inv = invite
+    const settings = inv?.settings || {}
+    await writePictionaryGame(roomId, createGame(players, { totalRounds: settings.totalRounds || 3, turnSeconds: settings.turnSeconds || 80 }))
+    await deletePictionaryInvite(roomId)
+  }
+
+  async function handleCancelInvite() {
+    await deletePictionaryInvite(roomId)
+  }
+
   async function handlePlayAgain() {
     const players = Object.entries(game.players).map(([uid, p]) => ({ uid, ...p }))
     await clearCanvas(roomId)
@@ -654,8 +771,11 @@ export default function PictionaryGame({ roomId, roomParticipants, currentUser, 
     <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden', background:'#0a0a14', position:'relative' }}>
       <style>{PICT_STYLES}</style>
 
-      {/* No game → lobby */}
-      {!game && (
+      {/* No game → invite waiting room or lobby */}
+      {!game && invite && (
+        <InviteWaitingRoom invite={invite} roomParticipants={roomParticipants} currentUser={currentUser} roomId={roomId} onStartGame={handleStartGame} onCancel={handleCancelInvite} />
+      )}
+      {!game && !invite && (
         <Lobby roomParticipants={roomParticipants} currentUser={currentUser} roomId={roomId} onClose={onClose} />
       )}
 

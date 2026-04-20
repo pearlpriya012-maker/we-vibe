@@ -8,6 +8,7 @@ import {
 } from '@/lib/wordChainGame'
 import {
   writeWordChainGame, subscribeWordChainGame, deleteWordChainGame,
+  writeWordChainInvite, respondToWordChainInvite, deleteWordChainInvite,
 } from '@/lib/wordChainFirestore'
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
@@ -228,15 +229,113 @@ function WordInput({ game, currentUser, onSubmit }) {
 }
 
 // ─── Lobby ─────────────────────────────────────────────────────────────────────
+function InviteWaitingRoom({ invite, roomParticipants, currentUser, roomId, onStartGame, onCancel }) {
+  const isHost = invite.initiatorUid === currentUser.uid
+  const [secs, setSecs] = useState(Math.max(0, Math.ceil((invite.expiresAt - Date.now()) / 1000)))
 
+  useEffect(() => {
+    const iv = setInterval(() => {
+      const r = Math.max(0, Math.ceil((invite.expiresAt - Date.now()) / 1000))
+      setSecs(r); if (r <= 0) clearInterval(iv)
+    }, 500)
+    return () => clearInterval(iv)
+  }, [invite.expiresAt])
+
+  useEffect(() => {
+    if (!isHost) return
+    const remaining = invite.expiresAt - Date.now()
+    if (remaining <= 0) { handleExpired(); return }
+    const t = setTimeout(handleExpired, remaining)
+    return () => clearTimeout(t)
+  }, [invite.expiresAt])
+
+  function handleExpired() {
+    const accepted = Object.entries(invite.responses || {}).filter(([,r])=>r==='accepted').map(([uid])=>uid)
+    if (accepted.length >= 2) onStartGame(accepted)
+    else deleteWordChainInvite(roomId)
+  }
+
+  const responses = invite.responses || {}
+  const acceptedUids = Object.entries(responses).filter(([,r])=>r==='accepted').map(([uid])=>uid)
+  const canStart = acceptedUids.length >= 2
+  const pct = Math.max(0, (secs / 45) * 100)
+  const barColor = secs <= 10 ? '#e74c3c' : secs <= 20 ? '#f39c12' : '#00ff88'
+
+  return (
+    <div style={{ flex:1, overflowY:'auto', display:'flex', flexDirection:'column', alignItems:'center', padding:'24px 20px', gap:20 }}>
+      <div style={{ textAlign:'center' }}>
+        <div style={{ fontSize:'3rem', marginBottom:6 }}>🔤</div>
+        <div style={{ fontFamily:'Oswald', fontSize:'2.2rem', fontWeight:800, letterSpacing:'0.2em', color:'#fff', textShadow:'0 0 30px rgba(16,185,129,0.5)' }}>WORD CHAIN</div>
+      </div>
+
+      <div style={{ width:'100%', maxWidth:420 }}>
+        <div style={{ fontFamily:'Oswald', fontSize:'0.72rem', color:'rgba(255,255,255,0.4)', letterSpacing:'0.1em', marginBottom:6 }}>
+          {isHost ? 'Waiting for players to respond…' : `${invite.initiatorName} invited you to play`}
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+          <div style={{ flex:1, height:6, borderRadius:3, background:'rgba(255,255,255,0.08)', overflow:'hidden' }}>
+            <div style={{ height:'100%', width:`${pct}%`, background:barColor, borderRadius:3, transition:'width .5s linear, background .5s' }} />
+          </div>
+          <span style={{ fontFamily:'Oswald', fontSize:'0.8rem', color:barColor, minWidth:30, textAlign:'right' }}>{secs}s</span>
+        </div>
+      </div>
+
+      <div style={{ width:'100%', maxWidth:420 }}>
+        <div style={{ fontFamily:'Oswald', fontSize:'0.65rem', color:'rgba(255,255,255,0.35)', letterSpacing:'0.14em', marginBottom:10 }}>RESPONSES ({acceptedUids.length} accepted)</div>
+        {roomParticipants.map(p => {
+          const resp = responses[p.uid] || 'pending'
+          const color = resp==='accepted'?'#00ff88':resp==='declined'?'#ff6b6b':'rgba(255,255,255,0.35)'
+          const icon  = resp==='accepted'?'✅':resp==='declined'?'❌':'⏳'
+          return (
+            <div key={p.uid} style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 14px', borderRadius:10, background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)', marginBottom:6 }}>
+              {p.photoURL ? <img src={p.photoURL} alt="" style={{ width:28, height:28, borderRadius:'50%', objectFit:'cover' }} /> : <div style={{ width:28, height:28, borderRadius:'50%', background:'linear-gradient(135deg,#10b981,#3b82f6)', display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'Oswald', fontWeight:700, fontSize:'0.75rem', color:'#fff' }}>{(p.displayName||'?')[0].toUpperCase()}</div>}
+              <span style={{ fontFamily:'Oswald', fontSize:'0.82rem', color: p.uid===currentUser.uid?'#6ee7b7':'#fff', flex:1 }}>{p.displayName}</span>
+              {p.uid===invite.initiatorUid && <span style={{ fontFamily:'Oswald', fontSize:'0.58rem', color:'gold', marginRight:4 }}>HOST</span>}
+              <span style={{ color }}>{icon}</span>
+            </div>
+          )
+        })}
+      </div>
+
+      <div style={{ display:'flex', gap:12, paddingBottom:16 }}>
+        {isHost ? (
+          <>
+            <button onClick={onCancel} style={{ padding:'11px 22px', borderRadius:10, background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.1)', color:'rgba(255,255,255,0.4)', fontFamily:'Oswald', fontSize:'0.82rem', cursor:'pointer' }}>Cancel</button>
+            <button onClick={() => onStartGame(acceptedUids)} disabled={!canStart}
+              style={{ padding:'11px 32px', borderRadius:10, border:'none', fontFamily:'Oswald', fontSize:'0.9rem', fontWeight:700, letterSpacing:'0.12em', cursor:canStart?'pointer':'not-allowed',
+                background: canStart?'linear-gradient(135deg,#10b981,#3b82f6)':'rgba(255,255,255,0.05)',
+                color: canStart?'#fff':'rgba(255,255,255,0.3)', opacity:canStart?1:0.5 }}>
+              Start ({acceptedUids.length})
+            </button>
+          </>
+        ) : (
+          <div style={{ fontFamily:'Oswald', fontSize:'0.78rem', color:'rgba(255,255,255,0.4)', textAlign:'center' }}>
+            {responses[currentUser.uid]==='accepted' ? '✅ You accepted — waiting for host' : '❌ You declined'}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Lobby ──────────────────────────────────────────────────────────────────────
 function Lobby({ roomParticipants, currentUser, roomId, onClose }) {
   const [turnSeconds, setTurnSeconds] = useState(15)
   const canStart = roomParticipants.length >= 2
 
   async function handleStart() {
-    const players = roomParticipants.map(p => ({ uid: p.uid, displayName: p.displayName, photoURL: p.photoURL || '' }))
-    const state = createGame(players, { turnSeconds })
-    await writeWordChainGame(roomId, startTurn(state))
+    const responses = {}
+    for (const p of roomParticipants) responses[p.uid] = p.uid === currentUser.uid ? 'accepted' : 'pending'
+    await writeWordChainInvite(roomId, {
+      initiatorUid: currentUser.uid,
+      initiatorName: currentUser.displayName || 'Someone',
+      initiatorPhoto: currentUser.photoURL || '',
+      gameName: 'Word Chain',
+      settings: { turnSeconds },
+      sentAt: Date.now(),
+      expiresAt: Date.now() + 45000,
+      responses,
+    })
   }
 
   return (
@@ -304,7 +403,7 @@ function Lobby({ roomParticipants, currentUser, roomId, onClose }) {
           cursor: canStart ? 'pointer' : 'not-allowed',
           boxShadow: canStart ? '0 0 24px rgba(16,185,129,0.4)' : 'none',
         }}>
-          🔤 START
+          🎮 INVITE PLAYERS
         </button>
       </div>
       {!canStart && <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.3)' }}>Need at least 2 players</div>}
@@ -406,7 +505,7 @@ function EventLog({ log }) {
 
 // ─── Main ──────────────────────────────────────────────────────────────────────
 
-export default function WordChainGame({ roomId, roomParticipants, currentUser, onClose }) {
+export default function WordChainGame({ roomId, roomParticipants, currentUser, invite, onClose }) {
   const [game, setGame]     = useState(null)
   const [loading, setLoading] = useState(true)
   const gameRef             = useRef(null)
@@ -416,6 +515,24 @@ export default function WordChainGame({ roomId, roomParticipants, currentUser, o
       setGame(s); gameRef.current = s; setLoading(false)
     })
   }, [roomId])
+
+  // ── Invite actions ──
+
+  async function handleStartGame(acceptedUids) {
+    const players = roomParticipants
+      .filter(p => acceptedUids.includes(p.uid))
+      .map(p => ({ uid: p.uid, displayName: p.displayName, photoURL: p.photoURL || '' }))
+    if (players.length < 2) return
+    const inv = invite
+    const settings = inv?.settings || {}
+    const state = createGame(players, { turnSeconds: settings.turnSeconds || 15 })
+    await writeWordChainGame(roomId, startTurn(state))
+    await deleteWordChainInvite(roomId)
+  }
+
+  async function handleCancelInvite() {
+    await deleteWordChainInvite(roomId)
+  }
 
   // ── Word submission ──
 
@@ -463,7 +580,10 @@ export default function WordChainGame({ roomId, roomParticipants, currentUser, o
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'radial-gradient(ellipse at 50% 0%,#071a12 0%,#060810 70%)', position: 'relative' }}>
       <style>{WC_STYLES}</style>
 
-      {!game && (
+      {!game && invite && (
+        <InviteWaitingRoom invite={invite} roomParticipants={roomParticipants} currentUser={currentUser} roomId={roomId} onStartGame={handleStartGame} onCancel={handleCancelInvite} />
+      )}
+      {!game && !invite && (
         <Lobby roomParticipants={roomParticipants} currentUser={currentUser} roomId={roomId} onClose={onClose} />
       )}
 

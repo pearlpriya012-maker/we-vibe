@@ -75,7 +75,7 @@ function GameCard({ game, onSelect }) {
   )
 }
 
-export default function GamesOverlay({ roomId, roomParticipants, currentUser, onClose, invite, initialGame }) {
+export default function GamesOverlay({ roomId, roomParticipants, currentUser, onClose, unoInvite, pictionaryInvite, wordchainInvite, initialGame }) {
   const [activeGame, setActiveGame] = useState(initialGame || null)
 
   if (activeGame === 'uno' || activeGame === 'pictionary' || activeGame === 'wordchain') {
@@ -99,7 +99,7 @@ export default function GamesOverlay({ roomId, roomParticipants, currentUser, on
             roomId={roomId}
             roomParticipants={roomParticipants}
             currentUser={currentUser}
-            invite={invite}
+            invite={unoInvite}
             onClose={() => setActiveGame(null)}
           />
         )}
@@ -108,6 +108,7 @@ export default function GamesOverlay({ roomId, roomParticipants, currentUser, on
             roomId={roomId}
             roomParticipants={roomParticipants}
             currentUser={currentUser}
+            invite={pictionaryInvite}
             onClose={() => setActiveGame(null)}
           />
         )}
@@ -116,6 +117,7 @@ export default function GamesOverlay({ roomId, roomParticipants, currentUser, on
             roomId={roomId}
             roomParticipants={roomParticipants}
             currentUser={currentUser}
+            invite={wordchainInvite}
             onClose={() => setActiveGame(null)}
           />
         )}

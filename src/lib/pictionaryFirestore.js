@@ -8,6 +8,25 @@ import { doc, setDoc, updateDoc, onSnapshot, deleteDoc } from 'firebase/firestor
 
 const gameRef   = (roomId) => doc(db, 'rooms', roomId, 'pictionary', 'game')
 const canvasRef = (roomId) => doc(db, 'rooms', roomId, 'pictionary', 'canvas')
+const inviteRef = (roomId) => doc(db, 'rooms', roomId, 'pictionary', 'invite')
+
+// ─── Invite helpers ───────────────────────────────────────────────────────────
+
+export async function writePictionaryInvite(roomId, invite) {
+  await setDoc(inviteRef(roomId), invite)
+}
+
+export async function respondToPictionaryInvite(roomId, uid, response) {
+  await updateDoc(inviteRef(roomId), { [`responses.${uid}`]: response })
+}
+
+export function subscribePictionaryInvite(roomId, callback) {
+  return onSnapshot(inviteRef(roomId), snap => callback(snap.exists() ? snap.data() : null))
+}
+
+export async function deletePictionaryInvite(roomId) {
+  try { await deleteDoc(inviteRef(roomId)) } catch (_) {}
+}
 
 // ─── Game state ───────────────────────────────────────────────────────────────
 
