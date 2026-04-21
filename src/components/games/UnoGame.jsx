@@ -630,27 +630,33 @@ export default function UnoGame({ roomId, roomParticipants, currentUser, invite,
   if (!game) {
     if (invite) {
       return (
-        <div style={{ flex:1,display:'flex',flexDirection:'column',overflow:'hidden',position:'relative',background:'#050c07' }}>
+        <div style={{ flex:1,display:'flex',flexDirection:'column',overflow:'hidden',position:'relative',background:'#050c07',isolation:'isolate' }}>
           <style>{UNO_STYLES}</style>
           <UnoBg />
-          <InviteWaitingRoom invite={invite} roomParticipants={roomParticipants} currentUser={currentUser} roomId={roomId} onStartGame={handleStartGame} onCancel={handleCancelInvite} />
+          <div style={{ position:'relative',zIndex:1,flex:1,display:'flex',flexDirection:'column',overflow:'hidden' }}>
+            <InviteWaitingRoom invite={invite} roomParticipants={roomParticipants} currentUser={currentUser} roomId={roomId} onStartGame={handleStartGame} onCancel={handleCancelInvite} />
+          </div>
         </div>
       )
     }
     return (
-      <div style={{ flex:1,display:'flex',flexDirection:'column',overflow:'hidden',position:'relative',background:'#050c07' }}>
+      <div style={{ flex:1,display:'flex',flexDirection:'column',overflow:'hidden',position:'relative',background:'#050c07',isolation:'isolate' }}>
         <style>{UNO_STYLES}</style>
         <UnoBg />
-        <SetupLobby roomParticipants={roomParticipants} currentUser={currentUser} roomId={roomId} onClose={onClose} />
+        <div style={{ position:'relative',zIndex:1,flex:1,display:'flex',flexDirection:'column',overflow:'hidden' }}>
+          <SetupLobby roomParticipants={roomParticipants} currentUser={currentUser} roomId={roomId} onClose={onClose} />
+        </div>
       </div>
     )
   }
 
   if (game.status==='finished') return (
-    <div style={{ flex:1,display:'flex',flexDirection:'column',overflow:'hidden',position:'relative',background:'#050c07' }}>
+    <div style={{ flex:1,display:'flex',flexDirection:'column',overflow:'hidden',position:'relative',background:'#050c07',isolation:'isolate' }}>
       <style>{UNO_STYLES}</style>
       <UnoBg />
-      <GameOver game={game} currentUser={currentUser} onPlayAgain={handlePlayAgain} onClose={handleClose} />
+      <div style={{ position:'relative',zIndex:1,flex:1,display:'flex',flexDirection:'column',overflow:'hidden' }}>
+        <GameOver game={game} currentUser={currentUser} onPlayAgain={handlePlayAgain} onClose={handleClose} />
+      </div>
     </div>
   )
 
