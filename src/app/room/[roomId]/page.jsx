@@ -3235,6 +3235,16 @@ export default function RoomPage() {
                       {focusLandscape ? '↕ PORTRAIT' : '↔ LANDSCAPE'}
                     </button>
                   )}
+                  {/* Playback controls overlay — only inside fullscreen so ⏭ works in focus mode */}
+                  {videoFocus && canControl && (
+                    <div style={{ position: 'absolute', bottom: 56, left: '50%', transform: 'translateX(-50%)', zIndex: 10, display: 'flex', alignItems: 'center', gap: 14, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 40, padding: '8px 20px' }}>
+                      {canFullControl && (
+                        <button onClick={handlePreviousTrack} style={{ width: 38, height: 38, borderRadius: '50%', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.2)', cursor: 'pointer', fontSize: '0.9rem', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>⏮</button>
+                      )}
+                      <button onClick={handlePlayPause} style={{ width: 48, height: 48, borderRadius: '50%', background: 'var(--green)', border: 'none', cursor: 'pointer', fontSize: '1.2rem', color: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 16px rgba(0,255,136,0.5)' }}>{room.isPlaying ? '⏸' : '▶'}</button>
+                      <button onClick={() => skipToNext(roomId)} style={{ width: 38, height: 38, borderRadius: '50%', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.2)', cursor: 'pointer', fontSize: '0.9rem', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>⏭</button>
+                    </div>
+                  )}
                 </div>
               )}
 
