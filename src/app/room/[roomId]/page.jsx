@@ -1498,9 +1498,11 @@ export default function RoomPage() {
     prevTrackRef.current = curr || null
     // Clear any previous stuck-video timer
     clearTimeout(mobileSkipTimerRef.current)
-    // Start a fresh 7s timer every time the track changes on mobile.
+    // Start a fresh 8s timer every time the track changes on mobile.
     // handlePlayerReady only fires on initial mount — this covers all subsequent track changes.
+    // Non-hosts get a longer grace period — they may be joining mid-song and still buffering.
     if (curr && room.isPlaying && isMobile) {
+      const timerDelay = isHost ? 8000 : 12000
       mobileSkipTimerRef.current = setTimeout(async () => {
         const state = ytPlayerRef.current?.getPlayerState?.()
         if (state === -1) {
@@ -1509,12 +1511,13 @@ export default function RoomPage() {
             lastSkipAtRef.current = Date.now()
             await skipToNext(roomId)
           } else {
-            const { updateDoc, doc } = await import('firebase/firestore')
-            const { db } = await import('@/lib/firebase')
-            await updateDoc(doc(db, 'rooms', roomId), { skipRequested: Date.now() })
+            // Non-host: don't skip — just retry playing. The host's track may be
+            // playing fine; only the guest is slow to buffer.
+            try { ytPlayerRef.current?.playVideo?.() } catch {}
+            setTimeout(() => { try { ytPlayerRef.current?.playVideo?.() } catch {} }, 1500)
           }
         }
-      }, 3000)
+      }, timerDelay)
     }
   }, [room?.currentTrack?.videoId])
 
@@ -2240,21 +2243,23 @@ export default function RoomPage() {
       else e.target.cueVideoById({ videoId: liveRoom.currentTrack.videoId, startSeconds: liveRoom.currentTime || 0 })
       if (liveRoom.isPlaying && isMobile) {
         clearTimeout(mobileSkipTimerRef.current)
+        const liveIsHost = roomRef.current?.hostId === user?.uid
+        const timerDelay = liveIsHost ? 8000 : 12000
         mobileSkipTimerRef.current = setTimeout(async () => {
           const state = ytPlayerRef.current?.getPlayerState?.()
           if (state === -1) {
-            const liveIsHost = roomRef.current?.hostId === user?.uid
             if (liveIsHost) {
               if (Date.now() - lastSkipAtRef.current < 4000) return
               lastSkipAtRef.current = Date.now()
               await skipToNext(roomId)
             } else {
-              const { updateDoc, doc } = await import('firebase/firestore')
-              const { db } = await import('@/lib/firebase')
-              await updateDoc(doc(db, 'rooms', roomId), { skipRequested: Date.now() })
+              // Non-host: retry playing rather than triggering a host skip.
+              // The guest may just be slow to buffer; the host's track is likely fine.
+              try { ytPlayerRef.current?.playVideo?.() } catch {}
+              setTimeout(() => { try { ytPlayerRef.current?.playVideo?.() } catch {} }, 1500)
             }
           }
-        }, 3000)
+        }, timerDelay)
       }
     } catch {}
   }
@@ -2310,14 +2315,28 @@ export default function RoomPage() {
         lastSkipAtRef.current = Date.now()
         await skipToNext(roomId)
       }
-    } else if (!liveIsHost && e.data === YT.ENDED) {
-      // Fallback: participant's player fired ENDED — signal host to skip in case
-      // host's player missed the event (background, network, mobile throttle)
-      try {
-        const { updateDoc, doc } = await import('firebase/firestore')
-        const { db } = await import('@/lib/firebase')
-        await updateDoc(doc(db, 'rooms', roomId), { skipRequested: Date.now() })
-      } catch {}
+    } else if (!liveIsHost) {
+      if (e.data === YT.PAUSED) {
+        // Non-host: YouTube auto-paused us (tab hidden / mobile throttle). Fight back
+        // immediately — only the host writes to Firestore; guests must play locally.
+        if (document.hidden && roomRef.current?.isPlaying) {
+          try { e.target.playVideo?.() } catch {}
+          setTimeout(() => {
+            try {
+              if (document.hidden && roomRef.current?.isPlaying && ytPlayerRef.current?.getPlayerState?.() !== 1)
+                ytPlayerRef.current?.playVideo?.()
+            } catch {}
+          }, 300)
+        }
+      } else if (e.data === YT.ENDED) {
+        // Fallback: participant's player fired ENDED — signal host to skip in case
+        // host's player missed the event (background, network, mobile throttle)
+        try {
+          const { updateDoc, doc } = await import('firebase/firestore')
+          const { db } = await import('@/lib/firebase')
+          await updateDoc(doc(db, 'rooms', roomId), { skipRequested: Date.now() })
+        } catch {}
+      }
     }
   }
 
