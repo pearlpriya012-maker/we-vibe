@@ -21,15 +21,45 @@ function isLatin(text) {
   return latinCount / sample.length > 0.7
 }
 
-// Pick the best result: prefer synced + Latin script
+// Pick the best result: prefer synced + Latin, but accept non-Latin (will be transliterated)
 function pickBest(results) {
   if (!Array.isArray(results) || !results.length) return null
   const latinSynced = results.find(r => r.syncedLyrics && isLatin(r.syncedLyrics))
   if (latinSynced) return latinSynced
   const latinPlain = results.find(r => r.plainLyrics && isLatin(r.plainLyrics))
   if (latinPlain) return latinPlain
-  // Fall back to any result with synced lyrics even if non-Latin
-  return results.find(r => r.syncedLyrics) || results[0] || null
+  // Fall back to any result with synced or plain lyrics even if non-Latin — will be transliterated
+  return results.find(r => r.syncedLyrics) || results.find(r => r.plainLyrics) || results[0] || null
+}
+
+// Transliterate non-Latin lyrics to Roman script phonetically via Groq
+async function transliterateToRoman(lines) {
+  const apiKey = process.env.GROQ_API_KEY?.trim()
+  if (!apiKey || !lines.length) return lines
+  const input = lines.join('\n')
+  try {
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        messages: [{
+          role: 'user',
+          content: `Transliterate the following song lyrics to Roman (Latin/English) script phonetically. DO NOT translate the meaning — write the same words using English letters so they sound like the original language when read aloud. Keep the exact same number of lines in the same order. Return ONLY the transliterated lines, nothing else.\n\n${input}`
+        }],
+        temperature: 0.1,
+        max_tokens: 4096,
+      })
+    })
+    if (!res.ok) return lines
+    const data = await res.json()
+    const output = data.choices?.[0]?.message?.content?.trim() || ''
+    const outLines = output.split('\n').map(l => l.trim()).filter(Boolean)
+    if (outLines.length === lines.length) return outLines
+    return lines.map((l, i) => outLines[i] || l)
+  } catch {
+    return lines
+  }
 }
 
 // Remove YouTube-specific noise from titles so lrclib can match them
@@ -83,7 +113,8 @@ export async function GET(request) {
       { headers: { 'Lrclib-Client': 'WeVibe/1.0' }, next: { revalidate: 3600 } }
     )
     const exact = res.ok ? await res.json() : null
-    if (exact && (exact.syncedLyrics || exact.plainLyrics) && isLatin(exact.syncedLyrics || exact.plainLyrics)) {
+    // Accept exact match regardless of script (non-Latin will be transliterated below)
+    if (exact && (exact.syncedLyrics || exact.plainLyrics)) {
       data = exact
     }
 
@@ -105,6 +136,22 @@ export async function GET(request) {
     }
 
     if (!data) return NextResponse.json({ lines: [], plain: null, synced: false })
+
+    // Transliterate non-Latin lyrics (e.g. Telugu, Hindi, Tamil) to Roman script
+    const lyricsText = data.syncedLyrics || data.plainLyrics || ''
+    if (!isLatin(lyricsText)) {
+      if (data.syncedLyrics) {
+        const parsed = parseLRC(data.syncedLyrics)
+        const romanTexts = await transliterateToRoman(parsed.map(l => l.text))
+        const romanLines = parsed.map((l, i) => ({ ...l, text: romanTexts[i] || l.text }))
+        return NextResponse.json({ lines: romanLines, plain: data.plainLyrics || null, synced: true })
+      }
+      if (data.plainLyrics) {
+        const rawLines = data.plainLyrics.split('\n').filter(l => l.trim())
+        const romanLines = await transliterateToRoman(rawLines)
+        return NextResponse.json({ lines: [], plain: romanLines.join('\n'), synced: false })
+      }
+    }
 
     if (data.syncedLyrics) {
       return NextResponse.json({
