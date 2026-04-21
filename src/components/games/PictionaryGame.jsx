@@ -450,9 +450,14 @@ function InviteWaitingRoom({ invite, roomParticipants, currentUser, roomId, onSt
               Start ({acceptedUids.length})
             </button>
           </>
+        ) : responses[currentUser.uid] === 'accepted' ? (
+          <div style={{ fontFamily:'Oswald', fontSize:'0.78rem', color:'rgba(255,255,255,0.4)', textAlign:'center' }}>✅ You accepted — waiting for host</div>
+        ) : responses[currentUser.uid] === 'declined' ? (
+          <div style={{ fontFamily:'Oswald', fontSize:'0.78rem', color:'rgba(255,255,255,0.4)', textAlign:'center' }}>❌ You declined</div>
         ) : (
-          <div style={{ fontFamily:'Oswald', fontSize:'0.78rem', color:'rgba(255,255,255,0.4)', textAlign:'center' }}>
-            {responses[currentUser.uid]==='accepted' ? '✅ You accepted — waiting for host' : '❌ You declined'}
+          <div style={{ display:'flex', gap:10 }}>
+            <button onClick={() => respondToPictionaryInvite(roomId,currentUser.uid,'declined')} style={{ padding:'11px 20px', borderRadius:10, background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.1)', color:'rgba(255,255,255,0.4)', fontFamily:'Oswald', fontSize:'0.82rem', cursor:'pointer' }}>Decline</button>
+            <button onClick={() => respondToPictionaryInvite(roomId,currentUser.uid,'accepted')} style={{ padding:'11px 28px', borderRadius:10, border:'none', background:'linear-gradient(135deg,#6366f1,#8b5cf6)', color:'#fff', fontFamily:'Oswald', fontSize:'0.88rem', fontWeight:700, letterSpacing:'0.12em', cursor:'pointer' }}>✅ Accept</button>
           </div>
         )}
       </div>

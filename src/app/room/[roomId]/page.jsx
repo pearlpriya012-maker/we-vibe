@@ -2742,6 +2742,9 @@ export default function RoomPage() {
         </header>
 
         {showGames && <GamesOverlay roomId={roomId} roomParticipants={room.participants || []} currentUser={user} onClose={() => { setShowGames(false); setDirectGame(null) }} unoInvite={unoInvite} pictionaryInvite={pictionaryInvite} wordchainInvite={wordchainInvite} initialGame={directGame} />}
+        <GameInviteToast invite={unoInvite}        game="uno"        respondFn={respondToUnoInvite}        currentUser={user} roomId={roomId} onAccept={() => { setDirectGame('uno');        setShowGames(true) }} onDecline={() => {}} />
+        <GameInviteToast invite={pictionaryInvite} game="pictionary" respondFn={respondToPictionaryInvite} currentUser={user} roomId={roomId} onAccept={() => { setDirectGame('pictionary'); setShowGames(true) }} onDecline={() => {}} />
+        <GameInviteToast invite={wordchainInvite}  game="wordchain"  respondFn={respondToWordChainInvite}  currentUser={user} roomId={roomId} onAccept={() => { setDirectGame('wordchain');  setShowGames(true) }} onDecline={() => {}} />
 
         {/* Mobile Content Area */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowX: 'hidden', overflowY: musicMode ? 'hidden' : 'auto', WebkitOverflowScrolling: 'touch', position: 'relative', zIndex: 1 }}>
@@ -2872,6 +2875,9 @@ export default function RoomPage() {
           </div>
         </header>
         {showGames && <GamesOverlay roomId={roomId} roomParticipants={room.participants || []} currentUser={user} onClose={() => { setShowGames(false); setDirectGame(null) }} unoInvite={unoInvite} pictionaryInvite={pictionaryInvite} wordchainInvite={wordchainInvite} initialGame={directGame} />}
+        <GameInviteToast invite={unoInvite}        game="uno"        respondFn={respondToUnoInvite}        currentUser={user} roomId={roomId} onAccept={() => { setDirectGame('uno');        setShowGames(true) }} onDecline={() => {}} />
+        <GameInviteToast invite={pictionaryInvite} game="pictionary" respondFn={respondToPictionaryInvite} currentUser={user} roomId={roomId} onAccept={() => { setDirectGame('pictionary'); setShowGames(true) }} onDecline={() => {}} />
+        <GameInviteToast invite={wordchainInvite}  game="wordchain"  respondFn={respondToWordChainInvite}  currentUser={user} roomId={roomId} onAccept={() => { setDirectGame('wordchain');  setShowGames(true) }} onDecline={() => {}} />
 
         {/* URL Bar — host only */}
         {isHost && (
@@ -3055,6 +3061,9 @@ export default function RoomPage() {
         </header>
 
         {showGames && <GamesOverlay roomId={roomId} roomParticipants={room.participants || []} currentUser={user} onClose={() => { setShowGames(false); setDirectGame(null) }} unoInvite={unoInvite} pictionaryInvite={pictionaryInvite} wordchainInvite={wordchainInvite} initialGame={directGame} />}
+        <GameInviteToast invite={unoInvite}        game="uno"        respondFn={respondToUnoInvite}        currentUser={user} roomId={roomId} onAccept={() => { setDirectGame('uno');        setShowGames(true) }} onDecline={() => {}} />
+        <GameInviteToast invite={pictionaryInvite} game="pictionary" respondFn={respondToPictionaryInvite} currentUser={user} roomId={roomId} onAccept={() => { setDirectGame('pictionary'); setShowGames(true) }} onDecline={() => {}} />
+        <GameInviteToast invite={wordchainInvite}  game="wordchain"  respondFn={respondToWordChainInvite}  currentUser={user} roomId={roomId} onAccept={() => { setDirectGame('wordchain');  setShowGames(true) }} onDecline={() => {}} />
 
         {/* Body — video + chat sidebar */}
         <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>

@@ -348,11 +348,14 @@ function InviteWaitingRoom({ invite, roomParticipants, currentUser, roomId, onSt
               Start Game ({acceptedUids.length})
             </button>
           </>
+        ) : responses[currentUser.uid] === 'accepted' ? (
+          <div style={{ fontFamily:'Oswald',fontSize:'0.78rem',color:'var(--text-dim)',textAlign:'center' }}>✅ You accepted — waiting for host to start</div>
+        ) : responses[currentUser.uid] === 'declined' ? (
+          <div style={{ fontFamily:'Oswald',fontSize:'0.78rem',color:'var(--text-dim)',textAlign:'center' }}>❌ You declined this game</div>
         ) : (
-          <div style={{ fontFamily:'Oswald',fontSize:'0.78rem',color:'var(--text-dim)',textAlign:'center' }}>
-            {responses[currentUser.uid] === 'accepted'
-              ? '✅ You accepted — waiting for host to start'
-              : '❌ You declined this game'}
+          <div style={{ display:'flex',gap:10 }}>
+            <button onClick={() => respondToInvite(roomId,currentUser.uid,'declined')} style={{ padding:'11px 20px',borderRadius:10,background:'rgba(255,255,255,0.05)',border:'1px solid rgba(255,255,255,0.1)',color:'var(--text-dim)',fontFamily:'Oswald',fontSize:'0.82rem',cursor:'pointer',letterSpacing:'0.06em' }}>Decline</button>
+            <button onClick={() => respondToInvite(roomId,currentUser.uid,'accepted')} style={{ padding:'11px 28px',borderRadius:10,border:'none',background:WILD_BG,color:'#fff',fontFamily:'Oswald',fontSize:'0.88rem',fontWeight:700,letterSpacing:'0.12em',cursor:'pointer' }}>✅ Accept</button>
           </div>
         )}
       </div>
