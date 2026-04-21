@@ -647,9 +647,11 @@ export default function WordChainGame({ roomId, roomParticipants, currentUser, i
   )
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#04030b', position: 'relative' }}>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#04030b', position: 'relative', isolation: 'isolate' }}>
       <style>{WC_STYLES}</style>
       <WcBg />
+      {/* Content layer sits above the atmospheric background */}
+      <div style={{ position: 'relative', zIndex: 1, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
       {!game && invite && (
         <InviteWaitingRoom invite={invite} roomParticipants={roomParticipants} currentUser={currentUser} roomId={roomId} onStartGame={handleStartGame} onCancel={handleCancelInvite} />
@@ -714,6 +716,7 @@ export default function WordChainGame({ roomId, roomParticipants, currentUser, i
           </div>
         )
       })()}
+      </div>
     </div>
   )
 }

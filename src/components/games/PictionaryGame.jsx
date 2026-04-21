@@ -831,9 +831,11 @@ export default function PictionaryGame({ roomId, roomParticipants, currentUser, 
   // ── Render ──
 
   return (
-    <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden', background:'#070408', position:'relative' }}>
+    <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden', background:'#070408', position:'relative', isolation:'isolate' }}>
       <style>{PICT_STYLES}</style>
       <PictBg />
+      {/* Content layer sits above the atmospheric background */}
+      <div style={{ position:'relative', zIndex:1, flex:1, display:'flex', flexDirection:'column', overflow:'hidden' }}>
 
       {/* No game → invite waiting room or lobby */}
       {!game && invite && (
@@ -905,6 +907,7 @@ export default function PictionaryGame({ roomId, roomParticipants, currentUser, 
 
         </div>
       )}
+      </div>
     </div>
   )
 }
