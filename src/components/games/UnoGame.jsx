@@ -60,6 +60,8 @@ const UNO_STYLES = `
   @keyframes cardBurstPart  { 0%{transform:translate(0,0) scale(0);opacity:1} 55%{transform:translate(var(--fx),var(--fy)) scale(1.4);opacity:.85} 100%{transform:translate(calc(var(--fx)*1.7),calc(var(--fy)*1.7)) scale(0);opacity:0} }
   @keyframes cardRingExpand { 0%{transform:translate(-50%,-50%) scale(.35);opacity:.95} 100%{transform:translate(-50%,-50%) scale(4.4);opacity:0} }
   @keyframes cardShimmer    { 0%{opacity:.72} 100%{opacity:0} }
+  @keyframes commentIn  { 0%{transform:translateY(18px) scale(.88);opacity:0} 60%{transform:translateY(-3px) scale(1.03)} 100%{transform:translateY(0) scale(1);opacity:1} }
+  @keyframes commentOut { 0%{opacity:1} 100%{opacity:0;transform:translateY(-12px)} }
   @keyframes actionIn { 0%{transform:translate(-50%,-50%) scale(.35) rotate(-12deg);opacity:0} 58%{transform:translate(-50%,-50%) scale(1.12) rotate(2deg);opacity:1} 78%{transform:translate(-50%,-50%) scale(.96) rotate(-1deg)} 100%{transform:translate(-50%,-50%) scale(1) rotate(0);opacity:1} }
   @keyframes actionOut{ 0%{opacity:1;transform:translate(-50%,-50%) scale(1)} 100%{opacity:0;transform:translate(-50%,-50%) scale(1.28) rotate(4deg)} }
   @keyframes drawBounce { 0%,100%{transform:scale(1) translateY(0)} 28%{transform:scale(.88) translateY(5px)} 65%{transform:scale(1.12) translateY(-8px)} }
@@ -247,6 +249,22 @@ function TurnBanner({ visible, leaving }) {
   return (
     <div style={{ position:'absolute',top:52,left:'50%',zIndex:155,pointerEvents:'none',className:leaving?'turn-out':'turn-in' }}>
       <div className={leaving ? 'turn-out' : 'turn-in'} style={{ background:'linear-gradient(135deg,rgba(255,215,0,0.14),rgba(255,160,0,0.08))',border:'1.5px solid rgba(255,215,0,0.55)',borderRadius:12,padding:'7px 26px',fontFamily:'Oswald',fontWeight:700,fontSize:'1rem',color:'gold',letterSpacing:'0.2em',boxShadow:'0 0 28px rgba(255,215,0,0.35)',backdropFilter:'blur(10px)',whiteSpace:'nowrap' }}>⚡ YOUR TURN</div>
+    </div>
+  )
+}
+
+function CommentaryBubble({ text, leaving }) {
+  if (!text) return null
+  return (
+    <div style={{ position:'absolute',bottom:135,left:'50%',transform:'translateX(-50%)',zIndex:150,pointerEvents:'none',width:'min(300px,88vw)',animation:leaving?'commentOut .35s ease forwards':'commentIn .38s cubic-bezier(.34,1.56,.64,1) both' }}>
+      <div style={{ background:'linear-gradient(145deg,rgba(15,8,32,0.97),rgba(10,5,22,0.94))',border:'1.5px solid rgba(255,255,255,0.12)',borderRadius:16,padding:'10px 18px',boxShadow:'0 8px 32px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.04)',textAlign:'center' }}>
+        <div style={{ fontFamily:'Oswald',fontSize:'0.72rem',color:'rgba(255,255,255,0.32)',letterSpacing:'0.14em',marginBottom:3 }}>🤖 AI COMMENTATOR</div>
+        <div style={{ fontFamily:'"Segoe UI",system-ui,sans-serif',fontSize:'0.88rem',color:'#fff',lineHeight:1.4 }}>{text}</div>
+      </div>
+      {/* speech bubble tail */}
+      <div style={{ position:'absolute',bottom:-7,left:'50%',transform:'translateX(-50%)',width:14,height:8,overflow:'hidden' }}>
+        <div style={{ width:14,height:14,background:'rgba(15,8,32,0.97)',border:'1.5px solid rgba(255,255,255,0.12)',transform:'rotate(45deg)',transformOrigin:'center',marginTop:-7,marginLeft:0 }} />
+      </div>
     </div>
   )
 }
@@ -643,7 +661,24 @@ function UnoBg() {
     </div>
   )
 }
-
+// ── Parse log entry into commentary event+context ──
+const LOG_TO_COMMENTARY = [
+  { test: /\u23d0 (.+?) is skipped.*skipped by (.+)/i,    event: 'skip',      ctx: m => ({ target: m[1], player: m[2] }) },
+  { test: /(.+?) is skipped/i,                            event: 'skip',      ctx: m => ({ target: m[1], player: '?' }) },
+  { test: /(.+?) chose (\w+)/i,                           event: 'wild',      ctx: m => ({ player: m[1], color: m[2] }) },
+  { test: /(.+?) draws 4.*skipped/i,                      event: 'draw4',     ctx: m => ({ target: m[1], player: '?' }) },
+  { test: /\ud83d\udc80 (.+?) draws 4/i,                  event: 'draw4',     ctx: m => ({ target: m[1], player: '?' }) },
+  { test: /(.+?) draws 2.*skipped/i,                      event: 'draw2',     ctx: m => ({ target: m[1], player: '?' }) },
+  { test: /stacked.*pending.*?(\d+)/i,                    event: 'stack',     ctx: m => ({ player: '?', total: m[1] }) },
+  { test: /(.+) wins the round/i,                         event: 'win',       ctx: m => ({ player: m[1], score: (m[0].match(/\+(\d+)/)||[])[1]||'?' }) },
+  { test: /(.+) caught (.+) lacking/i,                    event: 'caught',    ctx: m => ({ catcher: m[1], target: m[2] }) },
+  { test: /challenge.*bluff/i,                            event: 'challenge_bluff', ctx: m => ({ challenger: '?', target: '?' }) },
+  { test: /challenge.*legal/i,                            event: 'challenge_legal', ctx: m => ({ challenger: '?', target: '?' }) },
+  { test: /uno/i,                                         event: 'uno',       ctx: () => ({ player: '?' }) },
+  { test: /rotate.*hand/i,                                event: 'rotate',    ctx: () => ({ player: '?' }) },
+  { test: /swap.*hand/i,                                  event: 'swap',      ctx: () => ({ player: '?', target: '?' }) },
+  { test: /jump/i,                                        event: 'jumpIn',    ctx: () => ({ player: '?' }) },
+]
 // ─── Main UnoGame ──────────────────────────────────────────────────────────────
 
 export default function UnoGame({ roomId, roomParticipants, currentUser, invite, onClose }) {
@@ -657,9 +692,12 @@ export default function UnoGame({ roomId, roomParticipants, currentUser, invite,
   const [drawBouncing, setDrawBouncing]     = useState(false)
   const [turnBanner, setTurnBanner]         = useState(false)
   const [turnLeaving, setTurnLeaving]       = useState(false)
-  const gameRef    = useRef(null)
-  const logLenRef  = useRef(-1)
-  const prevTurnRef = useRef(null)
+  const [commentary, setCommentary]         = useState(null)   // { text, key }
+  const [commentLeaving, setCommentLeaving] = useState(false)
+  const gameRef        = useRef(null)
+  const logLenRef      = useRef(-1)
+  const prevTurnRef    = useRef(null)
+  const commentTimer   = useRef(null)
 
   useEffect(() => {
     const unsub = subscribeUnoGame(roomId, s => { setGame(s); gameRef.current = s; setLoading(false) })
@@ -677,6 +715,31 @@ export default function UnoGame({ roomId, roomParticipants, currentUser, invite,
     if (!match) return
     setActionToast({ key: Date.now(), ...match })
     const t = setTimeout(() => setActionToast(null), 1500)
+
+    // ── AI commentary ──
+    const cmatch = LOG_TO_COMMENTARY.find(m => m.test.test(last))
+    if (cmatch) {
+      const regexMatch = last.match(cmatch.test)
+      const context = cmatch.ctx(regexMatch || [])
+      const userApiKey = typeof window !== 'undefined' ? (localStorage.getItem('aibond_groq_key') || '') : ''
+      fetch('/api/groq/uno-commentary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event: cmatch.event, context, userApiKey }),
+      })
+        .then(r => r.json())
+        .then(({ line }) => {
+          if (!line) return
+          clearTimeout(commentTimer.current)
+          setCommentary({ text: line, key: Date.now() }); setCommentLeaving(false)
+          commentTimer.current = setTimeout(() => {
+            setCommentLeaving(true)
+            setTimeout(() => setCommentary(null), 380)
+          }, 4200)
+        })
+        .catch(() => {})
+    }
+
     return () => clearTimeout(t)
   }, [game?.log?.length])
 
@@ -839,6 +902,7 @@ export default function UnoGame({ roomId, roomParticipants, currentUser, invite,
 
       <ActionToast toast={actionToast} />
       <TurnBanner visible={turnBanner} leaving={turnLeaving} />
+      <CommentaryBubble text={commentary?.text} leaving={commentLeaving} />
 
       {sevenTarget==='PICK' && (
         <div style={{ position:'absolute',inset:0,background:'rgba(0,0,0,0.88)',zIndex:100,backdropFilter:'blur(5px)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:20 }}>
