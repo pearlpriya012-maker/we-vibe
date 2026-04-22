@@ -60,6 +60,16 @@ const UNO_STYLES = `
   @keyframes cardBurstPart  { 0%{transform:translate(0,0) scale(0);opacity:1} 55%{transform:translate(var(--fx),var(--fy)) scale(1.4);opacity:.85} 100%{transform:translate(calc(var(--fx)*1.7),calc(var(--fy)*1.7)) scale(0);opacity:0} }
   @keyframes cardRingExpand { 0%{transform:translate(-50%,-50%) scale(.35);opacity:.95} 100%{transform:translate(-50%,-50%) scale(4.4);opacity:0} }
   @keyframes cardShimmer    { 0%{opacity:.72} 100%{opacity:0} }
+  @keyframes actionIn { 0%{transform:translate(-50%,-50%) scale(.35) rotate(-12deg);opacity:0} 58%{transform:translate(-50%,-50%) scale(1.12) rotate(2deg);opacity:1} 78%{transform:translate(-50%,-50%) scale(.96) rotate(-1deg)} 100%{transform:translate(-50%,-50%) scale(1) rotate(0);opacity:1} }
+  @keyframes actionOut{ 0%{opacity:1;transform:translate(-50%,-50%) scale(1)} 100%{opacity:0;transform:translate(-50%,-50%) scale(1.28) rotate(4deg)} }
+  @keyframes drawBounce { 0%,100%{transform:scale(1) translateY(0)} 28%{transform:scale(.88) translateY(5px)} 65%{transform:scale(1.12) translateY(-8px)} }
+  @keyframes turnSlide { 0%{transform:translateX(-50%) translateY(-140%);opacity:0} 55%{transform:translateX(-50%) translateY(5px);opacity:1} 80%{transform:translateX(-50%) translateY(-2px)} 100%{transform:translateX(-50%) translateY(0);opacity:1} }
+  @keyframes turnFade  { 0%{opacity:1} 100%{opacity:0;transform:translateX(-50%) translateY(-20px)} }
+  @keyframes catchFlash{ 0%,100%{background:rgba(192,57,43,0.0)} 25%,75%{background:rgba(192,57,43,0.18)} }
+  @keyframes unoCallPop{ 0%{transform:scale(.4) rotate(-20deg);opacity:0} 65%{transform:scale(1.22) rotate(3deg);opacity:1} 100%{transform:scale(1) rotate(0);opacity:1} }
+  .draw-bounce  { animation: drawBounce .42s cubic-bezier(.34,1.56,.64,1) both; }
+  .turn-in      { animation: turnSlide .38s cubic-bezier(.34,1.56,.64,1) both; }
+  .turn-out     { animation: turnFade  .32s ease forwards; }
 `
 
 // ─── CardFace ──────────────────────────────────────────────────────────────────
@@ -122,9 +132,9 @@ function CardBack({ small = false, style = {} }) {
 
 // ─── DrawPileStack ─────────────────────────────────────────────────────────────
 
-function DrawPileStack({ count, onClick, enabled }) {
+function DrawPileStack({ count, onClick, enabled, bouncing }) {
   return (
-    <div onClick={enabled ? onClick : undefined} style={{ position:'relative',width:70,height:96,flexShrink:0,cursor:enabled?'pointer':'default' }}>
+    <div onClick={enabled ? onClick : undefined} className={bouncing ? 'draw-bounce' : ''} style={{ position:'relative',width:70,height:96,flexShrink:0,cursor:enabled?'pointer':'default' }}>
       <CardBack style={{ position:'absolute',top:6,left:6,opacity:0.4 }} />
       <CardBack style={{ position:'absolute',top:3,left:3,opacity:0.65 }} />
       <CardBack style={{ position:'absolute',top:0,left:0 }} />
@@ -199,6 +209,44 @@ function DiscardPileArea({ topCard, prevCard, currentColor }) {
         <div style={{ position:'absolute',bottom:-7,right:-7,width:18,height:18,borderRadius:'50%',background:CC[currentColor]?.bg,border:'2.5px solid rgba(255,255,255,0.55)',boxShadow:`0 0 10px ${CC[currentColor]?.glow}`,zIndex:5 }} />
       )}
       {burst && <CardPlayBurst key={burst.key} card={burst.card} />}
+    </div>
+  )
+}
+
+// ─── Action animations ───────────────────────────────────────────────────────────
+
+const LOG_ANIM = [
+  { test:/skipped/i,        icon:'⛔', label:'SKIP!',       color:'#ff6b6b',   glow:'rgba(255,107,107,0.5)' },
+  { test:/direction revers/i,icon:'🔄', label:'REVERSE!',    color:'#f39c12',   glow:'rgba(243,156,18,0.5)' },
+  { test:/stacked.*pend/i,  icon:'📚', label:'STACKED!',    color:'#ff9f43',   glow:'rgba(255,159,67,0.5)' },
+  { test:/draws 4/i,        icon:'💀', label:'+4 DRAW!',    color:'#a855f7',   glow:'rgba(168,85,247,0.55)' },
+  { test:/draws 2/i,        icon:'✌️', label:'+2 DRAW!',    color:'#e74c3c',   glow:'rgba(231,76,60,0.5)' },
+  { test:/chose/i,          icon:'🎨', label:'COLOR!',      color:'#00ff88',   glow:'rgba(0,255,136,0.45)' },
+  { test:/challenge.*legal/i,icon:'✅', label:'LEGAL!',      color:'#00ff88',   glow:'rgba(0,255,136,0.45)' },
+  { test:/challenge.*bluff/i,icon:'⚡', label:'BLUFF!',      color:'#f1c40f',   glow:'rgba(241,196,15,0.5)' },
+  { test:/caught/i,         icon:'🚨', label:'CAUGHT!',     color:'#e74c3c',   glow:'rgba(231,76,60,0.55)' },
+  { test:/uno/i,            icon:'🔔', label:'UNO!',        color:'#C0392B',   glow:'rgba(192,57,43,0.55)' },
+  { test:/wins/i,           icon:'🏆', label:'WINNER!',     color:'gold',      glow:'rgba(255,215,0,0.55)' },
+  { test:/rotate.*hand/i,   icon:'🔃', label:'ROTATE!',     color:'#5dade2',   glow:'rgba(93,173,226,0.5)' },
+  { test:/swap.*hand/i,     icon:'🔁', label:'SWAP!',       color:'#58d68d',   glow:'rgba(88,214,141,0.5)' },
+  { test:/jump/i,           icon:'⚡', label:'JUMP IN!',    color:'#f1c40f',   glow:'rgba(241,196,15,0.5)' },
+]
+
+function ActionToast({ toast }) {
+  if (!toast) return null
+  return (
+    <div key={toast.key} style={{ position:'absolute',top:'42%',left:'50%',zIndex:160,pointerEvents:'none',textAlign:'center',animation:'actionIn .4s cubic-bezier(.34,1.56,.64,1) both' }}>
+      <div style={{ fontSize:'2.8rem',lineHeight:1,filter:`drop-shadow(0 0 16px ${toast.glow})`,marginBottom:6 }}>{toast.icon}</div>
+      <div style={{ fontFamily:'Oswald',fontWeight:800,fontSize:'1.55rem',letterSpacing:'0.22em',color:toast.color,textShadow:`0 0 28px ${toast.glow}, 0 0 8px ${toast.glow}`,WebkitTextStroke:`0.5px ${toast.color}` }}>{toast.label}</div>
+    </div>
+  )
+}
+
+function TurnBanner({ visible, leaving }) {
+  if (!visible) return null
+  return (
+    <div style={{ position:'absolute',top:52,left:'50%',zIndex:155,pointerEvents:'none',className:leaving?'turn-out':'turn-in' }}>
+      <div className={leaving ? 'turn-out' : 'turn-in'} style={{ background:'linear-gradient(135deg,rgba(255,215,0,0.14),rgba(255,160,0,0.08))',border:'1.5px solid rgba(255,215,0,0.55)',borderRadius:12,padding:'7px 26px',fontFamily:'Oswald',fontWeight:700,fontSize:'1rem',color:'gold',letterSpacing:'0.2em',boxShadow:'0 0 28px rgba(255,215,0,0.35)',backdropFilter:'blur(10px)',whiteSpace:'nowrap' }}>⚡ YOUR TURN</div>
     </div>
   )
 }
@@ -605,12 +653,45 @@ export default function UnoGame({ roomId, roomParticipants, currentUser, invite,
   const [error, setError]                   = useState(null)
   const [showLog, setShowLog]               = useState(false)
   const [sevenTarget, setSevenTarget]       = useState(null)
-  const gameRef = useRef(null)
+  const [actionToast, setActionToast]       = useState(null)
+  const [drawBouncing, setDrawBouncing]     = useState(false)
+  const [turnBanner, setTurnBanner]         = useState(false)
+  const [turnLeaving, setTurnLeaving]       = useState(false)
+  const gameRef    = useRef(null)
+  const logLenRef  = useRef(-1)
+  const prevTurnRef = useRef(null)
 
   useEffect(() => {
     const unsub = subscribeUnoGame(roomId, s => { setGame(s); gameRef.current = s; setLoading(false) })
     return unsub
   }, [roomId])
+
+  // ── Action toast: watch log for new entries ──
+  useEffect(() => {
+    if (!game?.log) return
+    if (logLenRef.current === -1) { logLenRef.current = game.log.length; return }
+    if (game.log.length <= logLenRef.current) return
+    logLenRef.current = game.log.length
+    const last = game.log[game.log.length - 1]
+    const match = LOG_ANIM.find(m => m.test.test(last))
+    if (!match) return
+    setActionToast({ key: Date.now(), ...match })
+    const t = setTimeout(() => setActionToast(null), 1500)
+    return () => clearTimeout(t)
+  }, [game?.log?.length])
+
+  // ── Turn banner: slide in when it becomes my turn ──
+  useEffect(() => {
+    if (!game) return
+    const nowMyTurn = isMyTurn(game, currentUser.uid)
+    if (prevTurnRef.current === null) { prevTurnRef.current = nowMyTurn; return }
+    if (nowMyTurn && !prevTurnRef.current) {
+      setTurnBanner(true); setTurnLeaving(false)
+      const hide = setTimeout(() => { setTurnLeaving(true); setTimeout(() => setTurnBanner(false), 320) }, 1600)
+      return () => clearTimeout(hide)
+    }
+    prevTurnRef.current = nowMyTurn
+  }, [game?.currentIdx, game?.wildPickerUid, game?.status])
 
   const act = useCallback(async fn => {
     setError(null)
@@ -651,7 +732,10 @@ export default function UnoGame({ roomId, roomParticipants, currentUser, invite,
     setSelectedCardId(null)
   }
 
-  function handleDraw()        { act(s=>drawCard(s,currentUser.uid));  setSelectedCardId(null) }
+  function handleDraw() {
+    act(s=>drawCard(s,currentUser.uid)); setSelectedCardId(null)
+    setDrawBouncing(true); setTimeout(()=>setDrawBouncing(false), 450)
+  }
   function handlePass()        { act(s=>passTurn(s,currentUser.uid)) }
   function handleUno()         { act(s=>callUno(s,currentUser.uid)) }
   function handleCatchUno(tgt) { act(s=>catchUno(s,currentUser.uid,tgt)) }
@@ -753,6 +837,9 @@ export default function UnoGame({ roomId, roomParticipants, currentUser, invite,
 
       {needsColor && <ColorPicker onPick={handleColorPick} />}
 
+      <ActionToast toast={actionToast} />
+      <TurnBanner visible={turnBanner} leaving={turnLeaving} />
+
       {sevenTarget==='PICK' && (
         <div style={{ position:'absolute',inset:0,background:'rgba(0,0,0,0.88)',zIndex:100,backdropFilter:'blur(5px)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:20 }}>
           <div style={{ fontFamily:'Oswald',fontSize:'1.2rem',color:'#fff',letterSpacing:'0.15em' }}>SWAP HANDS WITH</div>
@@ -808,7 +895,7 @@ export default function UnoGame({ roomId, roomParticipants, currentUser, invite,
             <div style={{ position:'absolute',width:260,height:160,borderRadius:'50%',border:'1px solid rgba(255,255,255,0.04)',boxShadow:'inset 0 0 40px rgba(0,0,0,0.5)',pointerEvents:'none' }} />
 
             <div style={{ display:'flex',flexDirection:'column',alignItems:'center',gap:8,zIndex:1 }}>
-              <DrawPileStack count={game.drawPile?.length||0} enabled={myTurn&&!game.wildPickerUid} onClick={handleDraw} />
+              <DrawPileStack count={game.drawPile?.length||0} enabled={myTurn&&!game.wildPickerUid} onClick={handleDraw} bouncing={drawBouncing} />
               <span style={{ fontFamily:'Oswald',fontSize:'0.58rem',color:'var(--text-dim)',letterSpacing:'0.1em' }}>DRAW</span>
             </div>
 
