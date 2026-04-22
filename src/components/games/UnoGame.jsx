@@ -57,6 +57,9 @@ const UNO_STYLES = `
   .uno-band     { animation: colorBandIn .3s ease both; }
   .spin-cw      { animation: unoSpinCW  3s linear infinite; display:inline-block; }
   .spin-ccw     { animation: unoSpinCCW 3s linear infinite; display:inline-block; }
+  @keyframes cardBurstPart  { 0%{transform:translate(0,0) scale(0);opacity:1} 55%{transform:translate(var(--fx),var(--fy)) scale(1.4);opacity:.85} 100%{transform:translate(calc(var(--fx)*1.7),calc(var(--fy)*1.7)) scale(0);opacity:0} }
+  @keyframes cardRingExpand { 0%{transform:translate(-50%,-50%) scale(.35);opacity:.95} 100%{transform:translate(-50%,-50%) scale(4.4);opacity:0} }
+  @keyframes cardShimmer    { 0%{opacity:.72} 100%{opacity:0} }
 `
 
 // ─── CardFace ──────────────────────────────────────────────────────────────────
@@ -131,16 +134,71 @@ function DrawPileStack({ count, onClick, enabled }) {
   )
 }
 
+// ─── CardPlayBurst ─────────────────────────────────────────────────────────────
+
+const BURST_COLORS = {
+  red:    ['#C0392B','#E74C3C','#FF6B6B','#FADBD8'],
+  yellow: ['#D4AC0D','#F1C40F','#FFE066','#FDEBD0'],
+  green:  ['#1E8449','#27AE60','#58D68D','#D5F5E3'],
+  blue:   ['#1A5276','#2980B9','#5DADE2','#D6EAF8'],
+  wild:   ['#C0392B','#1A5276','#1E8449','#D4AC0D','#E74C3C','#2980B9','#27AE60','#F1C40F'],
+}
+
+function CardPlayBurst({ card }) {
+  const colors  = BURST_COLORS[card.color] || BURST_COLORS.wild
+  const glow    = card.color === 'wild' ? 'rgba(255,255,255,0.75)' : CC[card.color]?.glow
+  const ringClr = card.color === 'wild' ? '#fff' : CC[card.color]?.bg
+
+  const particles = Array.from({ length: 12 }, (_, i) => {
+    const angle = (i / 12) * Math.PI * 2
+    const dist  = 28 + (i % 3) * 12
+    const size  = 5 + (i % 3) * 2
+    return {
+      fx:    Math.round(Math.cos(angle) * dist),
+      fy:    Math.round(Math.sin(angle) * dist),
+      size,
+      color: colors[i % colors.length],
+      delay: `${(i * 0.022).toFixed(3)}s`,
+    }
+  })
+
+  return (
+    <div style={{ position:'absolute',top:'50%',left:'50%',width:0,height:0,overflow:'visible',zIndex:50,pointerEvents:'none' }}>
+      {/* Expanding rings */}
+      <div style={{ position:'absolute',top:0,left:0,width:62,height:88,borderRadius:9,border:`3px solid ${ringClr}`,boxShadow:`0 0 22px ${glow}`,animation:'cardRingExpand 0.55s ease-out forwards',transform:'translate(-50%,-50%)',opacity:0 }} />
+      <div style={{ position:'absolute',top:0,left:0,width:62,height:88,borderRadius:9,border:`2px solid ${ringClr}`,animation:'cardRingExpand 0.55s 0.09s ease-out forwards',transform:'translate(-50%,-50%)',opacity:0 }} />
+      {/* Sparkle particles */}
+      {particles.map((p, i) => (
+        <div key={i} style={{ position:'absolute',top:0,left:0,width:p.size,height:p.size,borderRadius:'50%',background:p.color,boxShadow:`0 0 ${p.size + 4}px ${p.color}`,transform:'translate(-50%,-50%)',opacity:0,animation:`cardBurstPart 0.62s ${p.delay} ease-out forwards`,'--fx':`${p.fx}px`,'--fy':`${p.fy}px` }} />
+      ))}
+      {/* Card shimmer flash */}
+      <div style={{ position:'absolute',top:0,left:0,width:62,height:88,borderRadius:9,background:card.color==='wild'?WILD_BG:`radial-gradient(circle at 58% 28%,rgba(255,255,255,0.65),${CC[card.color]?.bg}99,transparent 68%)`,transform:'translate(-50%,-50%)',animation:'cardShimmer 0.35s ease-out forwards',mixBlendMode:'screen',opacity:0 }} />
+    </div>
+  )
+}
+
 // ─── DiscardPileArea ───────────────────────────────────────────────────────────
 
 function DiscardPileArea({ topCard, prevCard, currentColor }) {
+  const [burst, setBurst] = useState(null)
+  const prevIdRef = useRef(topCard?.id)
+
+  useEffect(() => {
+    if (!topCard || topCard.id === prevIdRef.current) return
+    prevIdRef.current = topCard.id
+    setBurst({ card: topCard, key: Date.now() })
+    const t = setTimeout(() => setBurst(null), 800)
+    return () => clearTimeout(t)
+  }, [topCard?.id])
+
   return (
-    <div style={{ position:'relative',width:62,height:88,flexShrink:0 }}>
+    <div style={{ position:'relative',width:62,height:88,flexShrink:0,overflow:'visible' }}>
       {prevCard && <div style={{ position:'absolute',top:4,left:6,zIndex:0,opacity:0.42,transform:'rotate(14deg)',pointerEvents:'none' }}><CardFace card={prevCard} /></div>}
       {topCard && <div key={topCard.id} className="uno-drop" style={{ position:'absolute',top:0,left:0,zIndex:1 }}><CardFace card={topCard} /></div>}
       {currentColor && topCard?.color === 'wild' && (
         <div style={{ position:'absolute',bottom:-7,right:-7,width:18,height:18,borderRadius:'50%',background:CC[currentColor]?.bg,border:'2.5px solid rgba(255,255,255,0.55)',boxShadow:`0 0 10px ${CC[currentColor]?.glow}`,zIndex:5 }} />
       )}
+      {burst && <CardPlayBurst key={burst.key} card={burst.card} />}
     </div>
   )
 }
