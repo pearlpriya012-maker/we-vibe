@@ -285,6 +285,30 @@ function PlaylistPanel({ onAddToQueue, canAdd, ytAccessToken, onStartPlaylist, o
   )
 }
 
+// TrackRow MUST live outside SearchAndQueue — defining it inside causes React to
+// unmount+remount every row on each re-render (new function ref = new component
+// type), which resets the scroll position whenever room state updates.
+function TrackRow({ track, showPlaylist, canAdd, onAddToQueue }) {
+  return (
+    <div style={{ display: 'flex', gap: 8, padding: '6px 8px', borderRadius: 8, alignItems: 'center' }}
+      onMouseEnter={e => e.currentTarget.style.background = 'var(--glass-hover)'}
+      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+      <img src={track.thumbnail} alt="" style={{ width: 52, height: 36, borderRadius: 4, objectFit: 'cover', flexShrink: 0 }} />
+      <div style={{ flex: 1, overflow: 'hidden' }}>
+        <div style={{ fontSize: '0.75rem', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{track.title}</div>
+        <div style={{ fontSize: '0.68rem', color: 'var(--text-dim)' }}>
+          {track.channelTitle}{track.durationFormatted ? ` · ${track.durationFormatted}` : ''}
+          {showPlaylist && track.playlistName && <span style={{ color: 'rgba(0,255,136,0.6)', marginLeft: 4 }}>· {track.playlistName}</span>}
+        </div>
+      </div>
+      <button
+        onClick={() => { if (!canAdd) { toast('Ask host to allow adding songs'); return } onAddToQueue(track) }}
+        style={{ background: canAdd ? 'rgba(0,255,136,0.1)' : 'rgba(255,255,255,0.04)', border: `1px solid ${canAdd ? 'rgba(0,255,136,0.3)' : 'rgba(255,255,255,0.08)'}`, color: canAdd ? 'var(--green)' : 'rgba(255,255,255,0.25)', borderRadius: 6, padding: '4px 10px', fontSize: '0.7rem', cursor: canAdd ? 'pointer' : 'default', fontFamily: 'Oswald', flexShrink: 0 }}
+      >+ ADD</button>
+    </div>
+  )
+}
+
 // ─── Search & Queue Panel ───
 function SearchAndQueue({ room, isHost, canAdd, onAddToQueue, onPlayNow, onRemove, ytAccessToken, initialTab, hideTabs, roomId, playedHistory = [], onStartPlaylist, onShufflePlaylist, onTokenExpired }) {
   const [query, setQuery] = useState('')
@@ -355,25 +379,6 @@ function SearchAndQueue({ room, isHost, canAdd, onAddToQueue, onPlayNow, onRemov
       finally { setSearching(false) }
     }, 500)
   }
-
-  const TrackRow = ({ track, showPlaylist }) => (
-    <div style={{ display: 'flex', gap: 8, padding: '6px 8px', borderRadius: 8, alignItems: 'center' }}
-      onMouseEnter={e => e.currentTarget.style.background = 'var(--glass-hover)'}
-      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-      <img src={track.thumbnail} alt="" style={{ width: 52, height: 36, borderRadius: 4, objectFit: 'cover', flexShrink: 0 }} />
-      <div style={{ flex: 1, overflow: 'hidden' }}>
-        <div style={{ fontSize: '0.75rem', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{track.title}</div>
-        <div style={{ fontSize: '0.68rem', color: 'var(--text-dim)' }}>
-          {track.channelTitle}{track.durationFormatted ? ` · ${track.durationFormatted}` : ''}
-          {showPlaylist && track.playlistName && <span style={{ color: 'rgba(0,255,136,0.6)', marginLeft: 4 }}>· {track.playlistName}</span>}
-        </div>
-      </div>
-      <button
-        onClick={() => { if (!canAdd) { toast('Ask host to allow adding songs'); return } onAddToQueue(track) }}
-        style={{ background: canAdd ? 'rgba(0,255,136,0.1)' : 'rgba(255,255,255,0.04)', border: `1px solid ${canAdd ? 'rgba(0,255,136,0.3)' : 'rgba(255,255,255,0.08)'}`, color: canAdd ? 'var(--green)' : 'rgba(255,255,255,0.25)', borderRadius: 6, padding: '4px 10px', fontSize: '0.7rem', cursor: canAdd ? 'pointer' : 'default', fontFamily: 'Oswald', flexShrink: 0 }}
-      >+ ADD</button>
-    </div>
-  )
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
@@ -536,7 +541,7 @@ function SearchAndQueue({ room, isHost, canAdd, onAddToQueue, onPlayNow, onRemov
                     <div style={{ fontFamily: 'Oswald', fontSize: '0.65rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(0,255,136,0.7)', padding: '4px 6px 6px', display: 'flex', alignItems: 'center', gap: 6 }}>
                       📋 From Your Playlists
                     </div>
-                    {playlistResults.map(track => <TrackRow key={track.videoId + '-pl'} track={track} showPlaylist={true} />)}
+                    {playlistResults.map(track => <TrackRow key={track.videoId + '-pl'} track={track} showPlaylist={true} canAdd={canAdd} onAddToQueue={onAddToQueue} />)}
                     <div style={{ height: 1, background: 'var(--border)', margin: '8px 6px' }} />
                   </>
                 )}
@@ -545,7 +550,7 @@ function SearchAndQueue({ room, isHost, canAdd, onAddToQueue, onPlayNow, onRemov
                     <div style={{ fontFamily: 'Oswald', fontSize: '0.65rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-dim)', padding: '4px 6px 6px' }}>
                       🌍 YouTube Results
                     </div>
-                    {globalResults.map(track => <TrackRow key={track.videoId} track={track} showPlaylist={false} />)}
+                    {globalResults.map(track => <TrackRow key={track.videoId} track={track} showPlaylist={false} canAdd={canAdd} onAddToQueue={onAddToQueue} />)}
                   </>
                 )}
               </div>
