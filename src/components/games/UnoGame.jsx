@@ -69,6 +69,11 @@ const UNO_STYLES = `
   @keyframes turnFade  { 0%{opacity:1} 100%{opacity:0;transform:translateX(-50%) translateY(-20px)} }
   @keyframes catchFlash{ 0%,100%{background:rgba(192,57,43,0.0)} 25%,75%{background:rgba(192,57,43,0.18)} }
   @keyframes unoCallPop{ 0%{transform:scale(.4) rotate(-20deg);opacity:0} 65%{transform:scale(1.22) rotate(3deg);opacity:1} 100%{transform:scale(1) rotate(0);opacity:1} }
+  @keyframes dealFlyTop  { 0%{opacity:1;transform:translate(-50%,-50%) scale(1.2)} 100%{opacity:0;transform:translate(-50%,calc(-50% - 130px)) scale(0.38)} }
+  @keyframes dealFlyTL   { 0%{opacity:1;transform:translate(-50%,-50%) scale(1.2)} 100%{opacity:0;transform:translate(calc(-50% - 110px),calc(-50% - 100px)) scale(0.38)} }
+  @keyframes dealFlyTR   { 0%{opacity:1;transform:translate(-50%,-50%) scale(1.2)} 100%{opacity:0;transform:translate(calc(-50% + 110px),calc(-50% - 100px)) scale(0.38)} }
+  @keyframes dealPulse   { 0%,100%{transform:scale(1) translateY(0)} 35%{transform:scale(1.1) translateY(-4px)} 70%{transform:scale(0.97) translateY(1px)} }
+  @keyframes cflyin      { 0%{transform:translateY(-30px) scale(0.6) rotate(15deg);opacity:0} 65%{transform:translateY(3px) scale(1.06) rotate(-2deg);opacity:1} 100%{transform:translateY(0) scale(1) rotate(0);opacity:1} }
   .draw-bounce  { animation: drawBounce .42s cubic-bezier(.34,1.56,.64,1) both; }
   .turn-in      { animation: turnSlide .38s cubic-bezier(.34,1.56,.64,1) both; }
   .turn-out     { animation: turnFade  .32s ease forwards; }
@@ -312,27 +317,97 @@ function HandFan({ cards, selectedId, drawnId, onCardClick, cardIsPlayable }) {
   )
 }
 
+// ─── Table seat positioning helpers ──────────────────────────────────────────
+
+function getSeatPositions(n) {
+  if (n <= 0) return []
+  if (n === 1) return [{ top:10, left:'50%', transform:'translateX(-50%)' }]
+  if (n === 2) return [
+    { top:10, left:'20%', transform:'translateX(-50%)' },
+    { top:10, left:'80%', transform:'translateX(-50%)' },
+  ]
+  if (n === 3) return [
+    { top:10, left:'12%', transform:'translateX(-50%)' },
+    { top:10, left:'50%', transform:'translateX(-50%)' },
+    { top:10, left:'88%', transform:'translateX(-50%)' },
+  ]
+  return Array.from({length:n},(_,i)=>({ top:10, left:`${Math.round((i+1)/(n+1)*100)}%`, transform:'translateX(-50%)' }))
+}
+
+function getSeatDir(n, i) {
+  if (n === 1) return 'top'
+  if (n === 2) return i === 0 ? 'top-left' : 'top-right'
+  const pct = (i+1)/(n+1)
+  return pct < 0.4 ? 'top-left' : pct > 0.6 ? 'top-right' : 'top'
+}
+
+const DEAL_FLY_ANIM = { top:'dealFlyTop', 'top-left':'dealFlyTL', 'top-right':'dealFlyTR' }
+
+// ─── MiniCardFan ──────────────────────────────────────────────────────────────
+
+function MiniCardFan({ count }) {
+  const n = Math.min(count, 10)
+  if (n === 0) return (
+    <div style={{ height:42, display:'flex', alignItems:'center', justifyContent:'center' }}>
+      <span style={{ fontFamily:'Oswald', fontSize:'0.56rem', color:'rgba(255,255,255,0.18)', letterSpacing:'0.06em' }}>empty</span>
+    </div>
+  )
+  const spread = n > 7 ? 9 : n > 4 ? 12 : 15
+  const maxAngle = n > 7 ? 16 : n > 4 ? 24 : 34
+  const W = 22, H = 34
+  const totalW = W + (n - 1) * spread
+  return (
+    <div style={{ position:'relative', height:H+20, width:totalW, flexShrink:0 }}>
+      {Array.from({length:n}).map((_,i) => {
+        const ctr = (n-1)/2
+        const t = n > 1 ? (i-ctr)/Math.max(ctr,1) : 0
+        const angle = t * maxAngle
+        const yOff = Math.pow(Math.abs(t),1.4)*10
+        return (
+          <div key={i} style={{ position:'absolute',left:i*spread,bottom:yOff,transform:`rotate(${angle}deg)`,transformOrigin:'bottom center',zIndex:i }}>
+            <CardBack small style={{ width:W,height:H,borderRadius:3,border:'1.5px solid rgba(255,255,255,0.18)' }} />
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ─── DealFlyCard ──────────────────────────────────────────────────────────────
+
+function DealFlyCard({ dir, animKey }) {
+  const animName = DEAL_FLY_ANIM[dir] || 'dealFlyTop'
+  return (
+    <div key={animKey} style={{ position:'absolute',top:'50%',left:'50%',zIndex:28,pointerEvents:'none',animation:`${animName} 0.5s cubic-bezier(.3,.8,.4,1) forwards` }}>
+      <CardBack small style={{ width:26,height:40,borderRadius:3,filter:'drop-shadow(0 0 8px rgba(255,200,80,0.7))' }} />
+    </div>
+  )
+}
+
 // ─── OpponentSeat ──────────────────────────────────────────────────────────────
 
-function OpponentSeat({ opponent, isCurrent, onCatchUno, unoEligible }) {
+function OpponentSeat({ opponent, isCurrent, onCatchUno, unoEligible, dealAnim }) {
   return (
-    <div style={{ display:'flex',flexDirection:'column',alignItems:'center',gap:5,padding:'8px 10px',borderRadius:12,minWidth:68,flexShrink:0,background:isCurrent?'rgba(255,215,0,0.07)':'rgba(255,255,255,0.025)',border:`1.5px solid ${isCurrent?'rgba(255,215,0,0.38)':'rgba(255,255,255,0.07)'}`,transition:'all .3s',boxShadow:isCurrent?'0 0 22px rgba(255,215,0,0.15), inset 0 0 22px rgba(255,215,0,0.04)':'none' }}>
-      <div style={{ position:'relative' }}>
+    <div style={{ display:'flex',flexDirection:'column',alignItems:'center',gap:4,padding:'8px 10px 6px',borderRadius:16,position:'relative',background:isCurrent?'rgba(255,215,0,0.08)':'rgba(255,255,255,0.03)',border:`1.5px solid ${isCurrent?'rgba(255,215,0,0.45)':'rgba(255,255,255,0.08)'}`,transition:'all .3s ease',boxShadow:isCurrent?'0 0 28px rgba(255,215,0,0.22), inset 0 0 20px rgba(255,215,0,0.05)':'none',animation:dealAnim?'dealPulse 0.55s ease':'none' }}>
+      {/* Flying card indicator when receiving */}
+      {dealAnim && (
+        <div key={dealAnim} style={{ position:'absolute',top:-14,left:'50%',transform:'translateX(-50%)',pointerEvents:'none',zIndex:8,animation:'cflyin 0.42s cubic-bezier(.34,1.56,.64,1) both' }}>
+          <CardBack small style={{ width:22,height:33,borderRadius:3,filter:'drop-shadow(0 0 7px rgba(255,220,80,0.85))' }} />
+        </div>
+      )}
+      {/* Card backs fan */}
+      <MiniCardFan count={opponent.count} />
+      {/* Avatar */}
+      <div style={{ position:'relative',marginTop:2 }}>
         {opponent.photoURL
-          ? <img src={opponent.photoURL} alt="" style={{ width:32,height:32,borderRadius:'50%',objectFit:'cover',border:`2px solid ${isCurrent?'gold':'rgba(255,255,255,0.1)'}` }} />
-          : <div style={{ width:32,height:32,borderRadius:'50%',background:'linear-gradient(135deg,#C0392B,#1A5276)',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'Oswald',fontWeight:700,fontSize:'0.85rem',color:'#fff',border:`2px solid ${isCurrent?'gold':'transparent'}` }}>{(opponent.displayName||'?')[0].toUpperCase()}</div>
+          ? <img src={opponent.photoURL} alt="" style={{ width:30,height:30,borderRadius:'50%',objectFit:'cover',border:`2px solid ${isCurrent?'gold':'rgba(255,255,255,0.12)'}` }} />
+          : <div style={{ width:30,height:30,borderRadius:'50%',background:'linear-gradient(135deg,#C0392B,#1A5276)',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'Oswald',fontWeight:700,fontSize:'0.82rem',color:'#fff',border:`2px solid ${isCurrent?'gold':'transparent'}` }}>{(opponent.displayName||'?')[0].toUpperCase()}</div>
         }
-        {isCurrent && <div style={{ position:'absolute',top:-5,right:-5,fontSize:'0.65rem' }}>👑</div>}
+        {isCurrent && <div style={{ position:'absolute',top:-5,right:-5,fontSize:'0.6rem' }}>👑</div>}
       </div>
-      <div style={{ fontFamily:'Oswald',fontSize:'0.62rem',color:isCurrent?'gold':'var(--text-dim)',maxWidth:64,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',textAlign:'center' }}>{opponent.displayName}</div>
-      <div style={{ display:'flex',gap:1,flexWrap:'nowrap' }}>
-        {Array.from({length:Math.min(opponent.count,7)}).map((_,j)=>(
-          <div key={j} style={{ width:7,height:11,borderRadius:1.5,background:'linear-gradient(135deg,#330a18,#0a106b)',border:'0.5px solid rgba(255,255,255,0.22)' }} />
-        ))}
-        {opponent.count>7&&<span style={{ fontSize:'0.5rem',color:'var(--text-dim)',marginLeft:2 }}>+{opponent.count-7}</span>}
-      </div>
-      <div style={{ fontFamily:'Oswald',fontSize:'0.68rem',color:opponent.count===1?'#ff6b6b':'var(--text-dim)' }}>{opponent.count}{opponent.count===1?' 🔔':''}</div>
-      {unoEligible&&<button onClick={()=>onCatchUno(opponent.uid)} style={{ background:'linear-gradient(135deg,#C0392B,#7B241C)',border:'none',borderRadius:6,padding:'3px 8px',color:'#fff',fontFamily:'Oswald',fontSize:'0.58rem',cursor:'pointer',letterSpacing:'0.08em',boxShadow:'0 0 10px rgba(192,57,43,0.55)' }}>CATCH!</button>}
+      <div style={{ fontFamily:'Oswald',fontSize:'0.58rem',color:isCurrent?'gold':'var(--text-dim)',maxWidth:72,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',textAlign:'center',marginTop:1 }}>{opponent.displayName}</div>
+      <div style={{ fontFamily:'Oswald',fontSize:'0.62rem',color:opponent.count===1?'#ff6b6b':'rgba(255,255,255,0.45)' }}>{opponent.count}{opponent.count===1?' 🔔':''}</div>
+      {unoEligible&&<button onClick={()=>onCatchUno(opponent.uid)} style={{ background:'linear-gradient(135deg,#C0392B,#7B241C)',border:'none',borderRadius:5,padding:'2px 8px',color:'#fff',fontFamily:'Oswald',fontSize:'0.55rem',cursor:'pointer',letterSpacing:'0.06em',boxShadow:'0 0 10px rgba(192,57,43,0.6)' }}>CATCH!</button>}
     </div>
   )
 }
@@ -694,10 +769,12 @@ export default function UnoGame({ roomId, roomParticipants, currentUser, invite,
   const [turnLeaving, setTurnLeaving]       = useState(false)
   const [commentary, setCommentary]         = useState(null)   // { text, key }
   const [commentLeaving, setCommentLeaving] = useState(false)
+  const [dealAnims, setDealAnims]           = useState({})      // uid -> animKey
   const gameRef        = useRef(null)
   const logLenRef      = useRef(-1)
   const prevTurnRef    = useRef(null)
   const commentTimer   = useRef(null)
+  const prevCountsRef  = useRef({})
 
   useEffect(() => {
     const unsub = subscribeUnoGame(roomId, s => { setGame(s); gameRef.current = s; setLoading(false) })
@@ -742,6 +819,28 @@ export default function UnoGame({ roomId, roomParticipants, currentUser, invite,
 
     return () => clearTimeout(t)
   }, [game?.log?.length])
+
+  // ── Deal animation: detect when an opponent gains cards ──
+  useEffect(() => {
+    if (!game?.hands) return
+    const deltas = {}
+    Object.entries(game.hands).forEach(([uid, hand]) => {
+      if (uid === currentUser.uid) return   // skip self
+      const prev = prevCountsRef.current[uid] ?? hand.length
+      if (hand.length > prev) deltas[uid] = Date.now()
+      prevCountsRef.current[uid] = hand.length
+    })
+    if (Object.keys(deltas).length > 0) {
+      setDealAnims(d => ({ ...d, ...deltas }))
+      // clear after animation duration
+      const t = setTimeout(() => setDealAnims(d => {
+        const next = { ...d }
+        Object.keys(deltas).forEach(uid => delete next[uid])
+        return next
+      }), 650)
+      return () => clearTimeout(t)
+    }
+  }, [game?.hands])
 
   // ── Turn banner: slide in when it becomes my turn ──
   useEffect(() => {
@@ -944,51 +1043,58 @@ export default function UnoGame({ roomId, roomParticipants, currentUser, invite,
       ) : (
         <div style={{ flex:1,display:'flex',flexDirection:'column',overflow:'hidden' }}>
 
-          {/* Opponents */}
-          <div style={{ flexShrink:0,display:'flex',gap:8,padding:'10px 14px',overflowX:'auto',borderBottom:'1px solid rgba(255,255,255,0.04)',scrollbarWidth:'none',background:'rgba(0,0,0,0.28)' }}>
+          {/* Opponents bar — card-back fans across top */}
+          <div style={{ flexShrink:0,display:'flex',gap:6,padding:'8px 10px 6px',overflowX:'auto',borderBottom:'1px solid rgba(255,255,255,0.05)',scrollbarWidth:'none',background:'rgba(0,0,0,0.32)',justifyContent:opponents.length<4?'center':'flex-start',alignItems:'flex-end' }}>
             {opponents.map(op=>(
-              <OpponentSeat key={op.uid} opponent={op} isCurrent={game.order[game.currentIdx]===op.uid} unoEligible={!!game.unoPenaltyEligible?.[op.uid]} onCatchUno={handleCatchUno} />
+              <OpponentSeat
+                key={op.uid}
+                opponent={op}
+                isCurrent={game.order[game.currentIdx]===op.uid}
+                unoEligible={!!game.unoPenaltyEligible?.[op.uid]}
+                onCatchUno={handleCatchUno}
+                dealAnim={dealAnims[op.uid]}
+              />
             ))}
           </div>
 
           {/* Centre table */}
-          <div style={{ flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:28,padding:'14px 20px',position:'relative',background:'radial-gradient(ellipse at center,rgba(20,10,40,0.9) 0%,transparent 70%)' }}>
+          <div style={{ flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:22,padding:'12px 16px',position:'relative',overflow:'hidden' }}>
+            {/* Felt oval */}
+            <div style={{ position:'absolute',top:'50%',left:'50%',transform:'translate(-50%,-50%)',width:'82%',height:'70%',borderRadius:'50%',background:'radial-gradient(ellipse at 48% 42%, rgba(18,76,36,0.45) 0%, rgba(6,22,10,0.72) 70%)',border:'1.5px solid rgba(30,100,55,0.22)',boxShadow:'0 0 60px rgba(0,0,0,0.55), inset 0 0 60px rgba(0,0,0,0.38)',pointerEvents:'none' }} />
             {/* Ambient glow */}
-            <div style={{ position:'absolute',width:200,height:120,borderRadius:'50%',background:ambientGlow,filter:'blur(44px)',pointerEvents:'none',opacity:0.6 }} />
-            {/* Subtle felt ring */}
-            <div style={{ position:'absolute',width:260,height:160,borderRadius:'50%',border:'1px solid rgba(255,255,255,0.04)',boxShadow:'inset 0 0 40px rgba(0,0,0,0.5)',pointerEvents:'none' }} />
+            <div style={{ position:'absolute',width:180,height:110,borderRadius:'50%',background:ambientGlow,filter:'blur(42px)',pointerEvents:'none',opacity:0.55 }} />
 
-            <div style={{ display:'flex',flexDirection:'column',alignItems:'center',gap:8,zIndex:1 }}>
+            <div style={{ display:'flex',flexDirection:'column',alignItems:'center',gap:6,zIndex:1,position:'relative' }}>
               <DrawPileStack count={game.drawPile?.length||0} enabled={myTurn&&!game.wildPickerUid} onClick={handleDraw} bouncing={drawBouncing} />
-              <span style={{ fontFamily:'Oswald',fontSize:'0.58rem',color:'var(--text-dim)',letterSpacing:'0.1em' }}>DRAW</span>
+              <span style={{ fontFamily:'Oswald',fontSize:'0.55rem',color:'var(--text-dim)',letterSpacing:'0.1em' }}>DRAW</span>
             </div>
 
-            <div style={{ display:'flex',flexDirection:'column',alignItems:'center',gap:8,zIndex:1 }}>
+            <div style={{ display:'flex',flexDirection:'column',alignItems:'center',gap:6,zIndex:1,position:'relative' }}>
               <DiscardPileArea topCard={topCard} prevCard={prevCard} currentColor={curColor} />
-              <span style={{ fontFamily:'Oswald',fontSize:'0.58rem',color:'var(--text-dim)',letterSpacing:'0.1em' }}>DISCARD</span>
+              <span style={{ fontFamily:'Oswald',fontSize:'0.55rem',color:'var(--text-dim)',letterSpacing:'0.1em' }}>DISCARD</span>
             </div>
 
-            <div style={{ display:'flex',flexDirection:'column',gap:8,alignItems:'center',zIndex:1 }}>
+            <div style={{ display:'flex',flexDirection:'column',gap:6,alignItems:'center',zIndex:1 }}>
               {myHand.length===1&&(
-                <button onClick={handleUno} className={!game.unoCalledBy?.[currentUser.uid]?'uno-blink':''} style={{ padding:'9px 20px',borderRadius:10,background:game.unoCalledBy?.[currentUser.uid]?'rgba(0,255,136,0.12)':'linear-gradient(135deg,#C0392B,#D4AC0D)',border:game.unoCalledBy?.[currentUser.uid]?'1px solid rgba(0,255,136,0.3)':'none',color:'#fff',fontFamily:'Oswald',fontSize:'0.88rem',fontWeight:700,letterSpacing:'0.16em',cursor:'pointer',boxShadow:game.unoCalledBy?.[currentUser.uid]?'none':'0 0 20px rgba(192,57,43,0.55)' }}>
+                <button onClick={handleUno} className={!game.unoCalledBy?.[currentUser.uid]?'uno-blink':''} style={{ padding:'8px 18px',borderRadius:10,background:game.unoCalledBy?.[currentUser.uid]?'rgba(0,255,136,0.12)':'linear-gradient(135deg,#C0392B,#D4AC0D)',border:game.unoCalledBy?.[currentUser.uid]?'1px solid rgba(0,255,136,0.3)':'none',color:'#fff',fontFamily:'Oswald',fontSize:'0.85rem',fontWeight:700,letterSpacing:'0.16em',cursor:'pointer',boxShadow:game.unoCalledBy?.[currentUser.uid]?'none':'0 0 20px rgba(192,57,43,0.55)' }}>
                   {game.unoCalledBy?.[currentUser.uid]?'✅ UNO!':'🔔 UNO!'}
                 </button>
               )}
-              {myTurn&&game.drawnCardId!=null&&<button onClick={handlePass} style={{ padding:'7px 16px',borderRadius:8,background:'rgba(255,255,255,0.05)',border:'1px solid rgba(255,255,255,0.1)',color:'var(--text-dim)',fontFamily:'Oswald',fontSize:'0.72rem',cursor:'pointer',letterSpacing:'0.1em' }}>PASS</button>}
-              {canChallenge&&<button onClick={handleChallenge} style={{ padding:'7px 14px',borderRadius:8,background:'rgba(192,57,43,0.14)',border:'1px solid rgba(192,57,43,0.38)',color:'#ff6b6b',fontFamily:'Oswald',fontSize:'0.7rem',cursor:'pointer',letterSpacing:'0.08em' }}>⚡ CHALLENGE +4</button>}
+              {myTurn&&game.drawnCardId!=null&&<button onClick={handlePass} style={{ padding:'6px 14px',borderRadius:8,background:'rgba(255,255,255,0.05)',border:'1px solid rgba(255,255,255,0.1)',color:'var(--text-dim)',fontFamily:'Oswald',fontSize:'0.7rem',cursor:'pointer',letterSpacing:'0.1em' }}>PASS</button>}
+              {canChallenge&&<button onClick={handleChallenge} style={{ padding:'6px 12px',borderRadius:8,background:'rgba(192,57,43,0.14)',border:'1px solid rgba(192,57,43,0.38)',color:'#ff6b6b',fontFamily:'Oswald',fontSize:'0.68rem',cursor:'pointer',letterSpacing:'0.08em' }}>⚡ CHALLENGE +4</button>}
             </div>
           </div>
 
           {/* My hand */}
-          <div style={{ flexShrink:0,borderTop:'1px solid rgba(255,255,255,0.06)',paddingInline:12,paddingBottom:8,background:'rgba(6,4,16,0.96)' }}>
+          <div style={{ flexShrink:0,borderTop:'1.5px solid rgba(255,255,255,0.06)',paddingInline:10,paddingBottom:6,background:'rgba(6,4,16,0.97)' }}>
             <HandFan cards={myHand} selectedId={selectedCardId} drawnId={game.drawnCardId} onCardClick={handlePlayCard} cardIsPlayable={cardIsPlayable} />
             {jumpInCards.length>0&&(
               <div style={{ display:'flex',gap:6,justifyContent:'center',alignItems:'center',marginBottom:6 }}>
-                <span style={{ fontFamily:'Oswald',fontSize:'0.58rem',color:'gold',letterSpacing:'0.1em' }}>JUMP IN:</span>
+                <span style={{ fontFamily:'Oswald',fontSize:'0.56rem',color:'gold',letterSpacing:'0.1em' }}>JUMP IN:</span>
                 {jumpInCards.map(card=><CardFace key={card.id} card={card} small playable onClick={()=>handleJumpIn(card.id)} />)}
               </div>
             )}
-            <div style={{ textAlign:'center',fontFamily:'Oswald',fontSize:'0.62rem',color:'var(--text-dim)',letterSpacing:'0.1em',paddingBottom:2 }}>
+            <div style={{ textAlign:'center',fontFamily:'Oswald',fontSize:'0.6rem',color:'var(--text-dim)',letterSpacing:'0.1em',paddingBottom:2 }}>
               YOUR HAND ({myHand.length}){!myTurn&&<span style={{ marginLeft:8,opacity:0.38 }}>• Wait for your turn</span>}
             </div>
           </div>
