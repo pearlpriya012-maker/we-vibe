@@ -44,21 +44,31 @@ export function AuthProvider({ children }) {
 
   // ─── Enter with custom name (persists across sessions) ───
   async function loginWithName(name) {
-    const cred = await signInAnonymously(auth)
-    await updateProfile(cred.user, { displayName: name.trim() })
-    await createUserDoc(cred.user, { displayName: name.trim() })
-    localStorage.setItem('we-vibe-mode', 'named')
-    return cred.user
+    localStorage.setItem('we-vibe-mode', 'named')  // set BEFORE sign-in so onAuthStateChanged sees it
+    try {
+      const cred = await signInAnonymously(auth)
+      await updateProfile(cred.user, { displayName: name.trim() })
+      await createUserDoc(cred.user, { displayName: name.trim() })
+      return cred.user
+    } catch (err) {
+      localStorage.removeItem('we-vibe-mode')
+      throw err
+    }
   }
 
   // ─── Enter with random name (session only — no persistence) ───
   async function loginWithRandomName() {
     const name = randomGuestName()
-    const cred = await signInAnonymously(auth)
-    await updateProfile(cred.user, { displayName: name })
-    await createUserDoc(cred.user, { displayName: name })
-    sessionStorage.setItem('we-vibe-mode', 'random')
-    return cred.user
+    sessionStorage.setItem('we-vibe-mode', 'random')  // set BEFORE sign-in
+    try {
+      const cred = await signInAnonymously(auth)
+      await updateProfile(cred.user, { displayName: name })
+      await createUserDoc(cred.user, { displayName: name })
+      return cred.user
+    } catch (err) {
+      sessionStorage.removeItem('we-vibe-mode')
+      throw err
+    }
   }
 
   // ─── Google OAuth (YouTube linking) ───

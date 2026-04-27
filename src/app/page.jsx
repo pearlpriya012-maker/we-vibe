@@ -96,7 +96,11 @@ export default function LandingPage() {
       await loginWithName(trimmed)
       router.push('/dashboard')
     } catch (err) {
-      toast.error('Something went wrong, try again')
+      console.error('loginWithName failed:', err)
+      const msg = err?.code === 'auth/operation-not-allowed'
+        ? 'Anonymous sign-in is disabled — enable it in Firebase Console'
+        : (err?.message?.replace('Firebase: ', '') || 'Something went wrong, try again')
+      toast.error(msg)
     } finally {
       setEntering(false)
     }
@@ -108,7 +112,11 @@ export default function LandingPage() {
       await loginWithRandomName()
       router.push('/dashboard')
     } catch (err) {
-      toast.error('Something went wrong, try again')
+      console.error('loginWithRandomName failed:', err)
+      const msg = err?.code === 'auth/operation-not-allowed'
+        ? 'Anonymous sign-in is disabled — enable it in Firebase Console'
+        : (err?.message?.replace('Firebase: ', '') || 'Something went wrong, try again')
+      toast.error(msg)
     } finally {
       setEntering(false)
     }
