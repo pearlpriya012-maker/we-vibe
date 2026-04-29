@@ -397,13 +397,13 @@ function SearchAndQueue({ room, isHost, canAdd, onAddToQueue, onPlayNow, onRemov
           setPlaylistResults(filtered)
         }
         // Global YouTube search
-        const res = await fetch(`/api/youtube/search?q=${encodeURIComponent(q)}&limit=30`)
+        const res = await fetch(`/api/youtube/search?q=${encodeURIComponent(q)}&limit=10`)
         const data = await res.json()
         if (!res.ok) throw new Error(data.error || 'Search failed')
         setGlobalResults(data.results || [])
       } catch { toast.error('Search failed') }
       finally { setSearching(false) }
-    }, 500)
+    }, 800)
   }
 
   return (

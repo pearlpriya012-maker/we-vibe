@@ -2,6 +2,10 @@
 import { NextResponse } from 'next/server'
 import { withYouTubeKey } from '../keys'
 
+// In-memory cache: key = "query:limit", value = { results, ts }
+const cache = new Map()
+const CACHE_TTL_MS = 10 * 60 * 1000 // 10 minutes
+
 function parseDuration(iso) {
   const match = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/)
   if (!match) return 0
@@ -22,9 +26,16 @@ function formatDuration(seconds) {
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const q = searchParams.get('q')
-  const limit = Math.min(parseInt(searchParams.get('limit') || '30'), 50)
+  const limit = Math.min(parseInt(searchParams.get('limit') || '10'), 50)
 
   if (!q) return NextResponse.json({ error: 'Missing query' }, { status: 400 })
+
+  // Serve from cache if available
+  const cacheKey = `${q.toLowerCase().trim()}:${limit}`
+  const cached = cache.get(cacheKey)
+  if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
+    return NextResponse.json({ results: cached.results })
+  }
 
   try {
     // Step 1: Search with automatic key rotation (up to 3 keys via withYouTubeKey)
@@ -66,6 +77,9 @@ export async function GET(request) {
       })
       // Keep if duration is unknown (dur = -1) OR if it's longer than 60 s (filter Shorts)
       .filter((item) => item.duration === 0 || item.duration > 60)
+
+    // Store in cache
+    cache.set(cacheKey, { results, ts: Date.now() })
 
     return NextResponse.json({ results })
   } catch (err) {
