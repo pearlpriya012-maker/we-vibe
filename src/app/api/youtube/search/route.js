@@ -1,5 +1,6 @@
 // src/app/api/youtube/search/route.js
 import { NextResponse } from 'next/server'
+import { withYouTubeKey } from '../keys'
 
 function parseDuration(iso) {
   const match = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/)
@@ -25,29 +26,24 @@ export async function GET(request) {
 
   if (!q) return NextResponse.json({ error: 'Missing query' }, { status: 400 })
 
-  const API_KEY = process.env.YOUTUBE_API_KEY
-  if (!API_KEY) return NextResponse.json({ error: 'YouTube API not configured' }, { status: 500 })
-
   try {
-    // Step 1: Search — videoEmbeddable=true ensures videos can be played in-app.
-    // Note: videoCategoryId=10 and videoSyndicated are intentionally omitted — they
-    // are overly restrictive and cause zero results for most music searches because
-    // many music videos are not tagged under category 10 on YouTube.
-    const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&q=${encodeURIComponent(q)}&maxResults=${limit}&key=${API_KEY}&videoEmbeddable=true`
-    const searchRes = await fetch(searchUrl)
-    const searchData = await searchRes.json()
+    // Step 1: Search with automatic key rotation (up to 3 keys via withYouTubeKey)
+    const searchData = await withYouTubeKey(key => {
+      const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&q=${encodeURIComponent(q)}&maxResults=${limit}&key=${key}&videoEmbeddable=true`
+      return fetch(url).then(r => r.json())
+    })
 
     if (!searchData.items?.length) return NextResponse.json({ results: [] })
 
     const videoIds = searchData.items.map((i) => i.id.videoId).join(',')
 
-    // Step 2: Get durations — if this call fails for any reason we still return
-    // search results without duration rather than returning nothing.
+    // Step 2: Get durations — also uses key rotation; falls back gracefully on failure
     let durationMap = {}
     try {
-      const detailUrl = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${videoIds}&key=${API_KEY}`
-      const detailRes = await fetch(detailUrl)
-      const detailData = await detailRes.json()
+      const detailData = await withYouTubeKey(key => {
+        const url = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${videoIds}&key=${key}`
+        return fetch(url).then(r => r.json())
+      })
       detailData.items?.forEach((v) => {
         durationMap[v.id] = parseDuration(v.contentDetails.duration)
       })

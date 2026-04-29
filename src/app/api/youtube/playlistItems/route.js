@@ -1,5 +1,6 @@
 // src/app/api/youtube/playlistItems/route.js
 import { NextResponse } from 'next/server'
+import { withYouTubeKey } from '../keys'
 
 function parseDuration(iso) {
   const match = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/)
@@ -25,8 +26,7 @@ export async function GET(request) {
 
   if (!playlistId) return NextResponse.json({ error: 'Missing playlistId' }, { status: 400 })
 
-  const API_KEY = process.env.YOUTUBE_API_KEY?.trim()
-  if (!API_KEY) return NextResponse.json({ error: 'YouTube API not configured' }, { status: 500 })
+  // API key resolved per-request via key rotation helper
 
   try {
     // Fetch ALL playlist items by paginating through nextPageToken
@@ -35,9 +35,10 @@ export async function GET(request) {
     let pageToken = ''
     do {
       const pageParam = pageToken ? `&pageToken=${pageToken}` : ''
-      const itemsUrl = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails&playlistId=${playlistId}&maxResults=50&key=${API_KEY}${pageParam}`
-      const itemsRes = await fetch(itemsUrl, { headers })
-      const itemsData = await itemsRes.json()
+      const itemsData = await withYouTubeKey(key => {
+        const url = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails&playlistId=${playlistId}&maxResults=50&key=${key}${pageParam}`
+        return fetch(url, { headers }).then(r => r.json())
+      })
       if (!itemsData.items?.length) break
       allItems.push(...itemsData.items)
       pageToken = itemsData.nextPageToken || ''
@@ -56,9 +57,10 @@ export async function GET(request) {
     const durationMap = {}
     for (let i = 0; i < videoIds.length; i += 50) {
       const batch = videoIds.slice(i, i + 50).join(',')
-      const detailUrl = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${batch}&key=${API_KEY}`
-      const detailRes = await fetch(detailUrl)
-      const detailData = await detailRes.json()
+      const detailData = await withYouTubeKey(key => {
+        const url = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${batch}&key=${key}`
+        return fetch(url).then(r => r.json())
+      })
       detailData.items?.forEach((v) => {
         durationMap[v.id] = parseDuration(v.contentDetails.duration)
       })
