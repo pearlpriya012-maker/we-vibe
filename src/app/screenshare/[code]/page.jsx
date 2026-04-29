@@ -22,16 +22,46 @@ export default function ScreenShareViewerPage() {
   const videoRef = useRef(null)
   const pcRef = useRef(null)
   const unsubsRef = useRef([])
+  const dcRef = useRef(null)
   const [status, setStatus] = useState('connecting') // connecting | watching | ended | error
   const [hostName, setHostName] = useState('Host')
   const [errorMsg, setErrorMsg] = useState('')
+  const [dcReady, setDcReady] = useState(false)
+  const [interactionEnabled, setInteractionEnabled] = useState(false)
   // stable viewer ID for this tab session
   const viewerIdRef = useRef(null)
   if (!viewerIdRef.current) viewerIdRef.current = (typeof window !== 'undefined' ? (window.crypto?.randomUUID?.() || Math.random().toString(36).slice(2)) : Math.random().toString(36).slice(2))
 
+  function sendInteraction(data) {
+    try { if (dcRef.current?.readyState === 'open') dcRef.current.send(JSON.stringify(data)) } catch {}
+  }
+
+  function calcNormCoords(e, videoEl) {
+    const rect = e.currentTarget.getBoundingClientRect()
+    if (!videoEl?.videoWidth) return null
+    const vAR = videoEl.videoWidth / videoEl.videoHeight
+    const rAR = rect.width / rect.height
+    let vW, vH, vX, vY
+    if (vAR > rAR) { vW = rect.width; vH = rect.width / vAR; vX = 0; vY = (rect.height - vH) / 2 }
+    else { vH = rect.height; vW = rect.height * vAR; vX = (rect.width - vW) / 2; vY = 0 }
+    const nx = (e.clientX - rect.left - vX) / vW
+    const ny = (e.clientY - rect.top - vY) / vH
+    return (nx < 0 || nx > 1 || ny < 0 || ny > 1) ? null : { x: nx, y: ny }
+  }
+
   useEffect(() => {
     if (!user) { router.replace('/'); return }
   }, [user])
+
+  useEffect(() => {
+    if (!interactionEnabled) return
+    function onKey(e) {
+      sendInteraction({ type: 'keydown', key: e.key })
+      if (!['F5', 'F12', 'F1', 'Tab', 'F11'].includes(e.key)) e.preventDefault()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [interactionEnabled])
 
   useEffect(() => {
     if (!user || !code) return
@@ -47,6 +77,15 @@ export default function ScreenShareViewerPage() {
 
         pc = new RTCPeerConnection(ICE_CONFIG)
         pcRef.current = pc
+
+        // Receive DataChannel from host for interaction
+        pc.ondatachannel = (e) => {
+          if (e.channel.label === 'interaction') {
+            dcRef.current = e.channel
+            e.channel.onopen = () => setDcReady(true)
+            e.channel.onclose = () => { setDcReady(false); setInteractionEnabled(false) }
+          }
+        }
 
         pc.ontrack = (e) => {
           if (videoRef.current && e.streams[0]) {
@@ -77,8 +116,12 @@ export default function ScreenShareViewerPage() {
             await pc.setRemoteDescription(new RTCSessionDescription(msg.data))
             remoteDescSet = true
             const answer = await pc.createAnswer()
-            await pc.setLocalDescription(answer)
-            await sendSignal(session.id, viewerId, 'host', 'answer', answer)
+            // Preserve the host's high-bitrate Opus settings in the answer
+            const patchedSdp = answer.sdp
+              .replace(/a=fmtp:(\\d+) useinbandfec=1/g, 'a=fmtp:$1 useinbandfec=1; stereo=1; sprop-stereo=1; maxaveragebitrate=510000')
+            const finalAnswer = { type: answer.type, sdp: patchedSdp }
+            await pc.setLocalDescription(finalAnswer)
+            await sendSignal(session.id, viewerId, 'host', 'answer', finalAnswer)
             // Flush buffered ICE candidates
             for (const c of pendingCandidates) {
               try { await pc.addIceCandidate(new RTCIceCandidate(c)) } catch {}
@@ -145,7 +188,17 @@ export default function ScreenShareViewerPage() {
             )}
           </div>
         </div>
-        <Link href="/dashboard" style={{ color: 'var(--text-dim)', fontSize: '0.78rem', textDecoration: 'none' }}>Leave</Link>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {dcReady && (
+            <button
+              onClick={() => setInteractionEnabled(e => !e)}
+              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 6, border: `1px solid ${interactionEnabled ? 'var(--green)' : 'rgba(255,255,255,0.15)'}`, background: interactionEnabled ? 'rgba(0,255,136,0.1)' : 'transparent', color: interactionEnabled ? 'var(--green)' : 'var(--text-dim)', fontSize: '0.7rem', cursor: 'pointer', fontFamily: 'Oswald', letterSpacing: '0.05em', textTransform: 'uppercase' }}
+            >
+              🖱️ {interactionEnabled ? 'Interacting' : 'Interact'}
+            </button>
+          )}
+          <Link href="/dashboard" style={{ color: 'var(--text-dim)', fontSize: '0.78rem', textDecoration: 'none' }}>Leave</Link>
+        </div>
       </div>
 
       {/* Video */}
@@ -157,12 +210,24 @@ export default function ScreenShareViewerPage() {
             <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
           </div>
         )}
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          style={{ maxWidth: '100%', maxHeight: 'calc(100vh - 60px)', objectFit: 'contain', display: status === 'watching' ? 'block' : 'none' }}
-        />
+        <div style={{ position: 'relative', display: status === 'watching' ? 'inline-flex' : 'none' }}>
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            style={{ maxWidth: '100vw', maxHeight: 'calc(100vh - 60px)', objectFit: 'contain', display: 'block' }}
+          />
+          {/* Interaction overlay — captures events and forwards to host via DataChannel */}
+          {dcReady && interactionEnabled && (
+            <div
+              style={{ position: 'absolute', inset: 0, cursor: 'crosshair', zIndex: 5 }}
+              onClick={(e) => { const c = calcNormCoords(e, videoRef.current); if (c) sendInteraction({ type: 'click', ...c }) }}
+              onMouseMove={(e) => { const c = calcNormCoords(e, videoRef.current); if (c) sendInteraction({ type: 'cursor', ...c }) }}
+              onWheel={(e) => { e.preventDefault(); sendInteraction({ type: 'scroll', deltaX: e.deltaX / 500, deltaY: e.deltaY / 500 }) }}
+              tabIndex={-1}
+            />
+          )}
+        </div>
       </div>
     </div>
   )

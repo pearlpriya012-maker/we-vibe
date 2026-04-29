@@ -45,11 +45,16 @@ export default function DashboardPage() {
   const [screenCode, setScreenCode] = useState('')
   const [viewerCount, setViewerCount] = useState(0)
   const [watchScreenCode, setWatchScreenCode] = useState('')
+  const [allowInteraction, setAllowInteraction] = useState(true)
+  const [viewerCursors, setViewerCursors] = useState({})
   const screenVideoRef = useRef(null)
   const screenStreamRef = useRef(null)
   const sessionIdRef = useRef(null)
   const pcsRef = useRef({})
   const viewerCandidatesRef = useRef({})
+  const dataChannelsRef = useRef({})
+  const viewerNamesRef = useRef({})
+  const allowInteractionRef = useRef(true)
   const unsubSignalsRef = useRef(null)
 
   // Extract a clean embed URL from a YouTube, Dailymotion, Vimeo, or arbitrary URL
@@ -141,12 +146,62 @@ export default function DashboardPage() {
     }
   }
 
-  async function startSharing() {
+  function dispatchInteraction({ type, x, y, key, deltaX, deltaY }) {
+    const docX = x * window.innerWidth
+    const docY = y * window.innerHeight
+    const target = document.elementFromPoint(docX, docY) || document.body
+    if (type === 'click') {
+      if (['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'A'].includes(target.tagName)) target.focus?.()
+      target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: docX, clientY: docY, view: window }))
+      target.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, clientX: docX, clientY: docY, view: window }))
+      target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: docX, clientY: docY, view: window }))
+    } else if (type === 'scroll') {
+      window.scrollBy({ left: deltaX * window.innerWidth, top: deltaY * window.innerHeight, behavior: 'instant' })
+    } else if (type === 'keydown') {
+      const active = document.activeElement || document.body
+      active.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key, code: key }))
+      active.dispatchEvent(new KeyboardEvent('keypress', { bubbles: true, cancelable: true, key, code: key }))
+      active.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, cancelable: true, key, code: key }))
+      if (key.length === 1 && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) {
+        const s = active.selectionStart || 0
+        active.value = active.value.slice(0, s) + key + active.value.slice(active.selectionEnd || s)
+        active.selectionStart = active.selectionEnd = s + 1
+        active.dispatchEvent(new Event('input', { bubbles: true }))
+      } else if (key === 'Backspace' && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) {
+        const s = active.selectionStart || 0
+        if (s > 0) {
+          active.value = active.value.slice(0, s - 1) + active.value.slice(active.selectionEnd || s)
+          active.selectionStart = active.selectionEnd = s - 1
+          active.dispatchEvent(new Event('input', { bubbles: true }))
+        }
+      }
+    }
+  }
+
+  async function startSharing(mode = 'tab') {
     try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({
+      const constraints = {
         video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } },
-        audio: true,
-      })
+        // Disable all audio processing so music/original audio is preserved
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+          sampleRate: 48000,
+          channelCount: 2,
+          latency: 0,
+        },
+      }
+      // Hint to browser to pre-select the tab picker and suppress self-capture warning
+      if (mode === 'tab') {
+        constraints.preferCurrentTab = false          // show full picker but default to Tab
+        constraints.selfBrowserSurface = 'exclude'   // hide this tab from the list
+        constraints.video.displaySurface = 'browser' // pre-select "Browser tab" category
+      } else {
+        constraints.selfBrowserSurface = 'exclude'
+        constraints.video.displaySurface = mode === 'window' ? 'window' : 'monitor'
+      }
+      const stream = await navigator.mediaDevices.getDisplayMedia(constraints)
       const session = await createScreenSession(user.uid, user.displayName)
       screenStreamRef.current = stream
       sessionIdRef.current = session.id
@@ -158,13 +213,33 @@ export default function DashboardPage() {
         const vId = msg.from
         if (msg.type === 'join') {
           setViewerCount(c => c + 1)
+          viewerNamesRef.current[vId] = msg.data?.name || 'Viewer'
           const pc = new RTCPeerConnection(ICE_CONFIG)
           pcsRef.current[vId] = pc
           stream.getTracks().forEach(track => pc.addTrack(track, stream))
           pc.onicecandidate = (e) => {
             if (e.candidate) sendSignal(session.id, 'host', vId, 'ice', e.candidate)
           }
-          const offer = await pc.createOffer()
+          // Create DataChannel BEFORE createOffer so it's included in the SDP
+          const dc = pc.createDataChannel('interaction', { ordered: false, maxRetransmits: 0 })
+          dataChannelsRef.current[vId] = dc
+          dc.onmessage = (evt) => {
+            try {
+              const data = JSON.parse(evt.data)
+              if (!allowInteractionRef.current) return
+              if (data.type === 'cursor') {
+                setViewerCursors(prev => ({ ...prev, [vId]: { x: data.x, y: data.y, name: viewerNamesRef.current[vId] || 'Viewer' } }))
+              } else {
+                dispatchInteraction(data)
+              }
+            } catch {}
+          }
+          const rawOffer = await pc.createOffer()
+          // Patch SDP: force Opus into high-bitrate stereo music mode
+          const patchedSdp = rawOffer.sdp
+            .replace(/a=fmtp:(\d+) useinbandfec=1/g, 'a=fmtp:$1 useinbandfec=1; stereo=1; sprop-stereo=1; maxaveragebitrate=510000; cbr=0')
+            .replace(/a=maxptime:\d+\r?\n/g, 'a=maxptime:60\r\n')
+          const offer = { type: rawOffer.type, sdp: patchedSdp }
           await pc.setLocalDescription(offer)
           await sendSignal(session.id, 'host', vId, 'offer', offer)
         } else if (msg.type === 'answer') {
@@ -196,6 +271,8 @@ export default function DashboardPage() {
     Object.values(pcsRef.current).forEach(pc => pc.close())
     pcsRef.current = {}
     viewerCandidatesRef.current = {}
+    dataChannelsRef.current = {}
+    viewerNamesRef.current = {}
     unsubSignalsRef.current?.()
     unsubSignalsRef.current = null
     screenStreamRef.current = null
@@ -203,6 +280,7 @@ export default function DashboardPage() {
     setScreenStatus('idle')
     setScreenCode('')
     setViewerCount(0)
+    setViewerCursors({})
   }
 
   function handleWatchScreenCode(e) {
@@ -320,9 +398,19 @@ export default function DashboardPage() {
                     <div style={{ background: 'rgba(147,51,234,0.06)', border: '1px solid rgba(147,51,234,0.2)', borderRadius: 10, padding: '16px 20px', fontSize: '0.875rem', color: 'var(--text-dim)' }}>
                       <span style={{ color: '#a78bfa', fontWeight: 600 }}>🖥️ Screen Share.</span> Share your screen in high quality with anyone using a 6-char code.
                     </div>
-                    <button onClick={startSharing} className="btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '15px', background: '#7c3aed', boxShadow: '0 0 20px rgba(124,58,237,0.35)' }}>
-                      🖥️ Start Sharing
-                    </button>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                      {[
+                        { mode: 'tab',    icon: '🗂️', label: 'Browser Tab' },
+                        { mode: 'window', icon: '🪟', label: 'Window' },
+                        { mode: 'screen', icon: '🖥️', label: 'Full Screen' },
+                      ].map(({ mode, icon, label }) => (
+                        <button key={mode} onClick={() => startSharing(mode)}
+                          style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, padding: '14px 8px', background: 'rgba(124,58,237,0.1)', border: '1px solid rgba(124,58,237,0.3)', borderRadius: 10, color: '#a78bfa', fontSize: '0.72rem', fontFamily: 'Oswald', letterSpacing: '0.06em', cursor: 'pointer', textTransform: 'uppercase' }}>
+                          <span style={{ fontSize: '1.6rem' }}>{icon}</span>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
                     <div style={{ borderTop: '1px solid var(--border)', paddingTop: 20 }}>
                       <div style={{ fontFamily: 'Oswald', fontSize: '0.78rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-dim)', marginBottom: 12 }}>Watch Someone's Screen</div>
                       <form onSubmit={handleWatchScreenCode} style={{ display: 'flex', gap: 8 }}>
@@ -343,7 +431,16 @@ export default function DashboardPage() {
                   </>
                 ) : (
                   <>
-                    <video ref={screenVideoRef} autoPlay muted playsInline style={{ width: '100%', borderRadius: 8, background: '#000', maxHeight: 200, objectFit: 'contain' }} />
+                    {/* Preview with viewer cursor overlays */}
+                    <div style={{ position: 'relative', borderRadius: 8, overflow: 'hidden', background: '#000' }}>
+                      <video ref={screenVideoRef} autoPlay muted playsInline style={{ width: '100%', maxHeight: 200, objectFit: 'contain', display: 'block' }} />
+                      {Object.entries(viewerCursors).map(([id, cur]) => (
+                        <div key={id} style={{ position: 'absolute', left: `${cur.x * 100}%`, top: `${cur.y * 100}%`, transform: 'translate(-50%,-50%)', pointerEvents: 'none', zIndex: 5 }}>
+                          <div style={{ width: 10, height: 10, borderRadius: '50%', background: 'rgba(255,120,120,0.9)', border: '2px solid #fff', boxShadow: '0 0 6px rgba(255,120,120,0.6)' }} />
+                          <div style={{ fontSize: '0.5rem', color: '#fff', background: 'rgba(0,0,0,0.75)', borderRadius: 3, padding: '1px 4px', marginTop: 2, whiteSpace: 'nowrap' }}>{cur.name}</div>
+                        </div>
+                      ))}
+                    </div>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                       <div>
                         <div style={{ fontFamily: 'Oswald', fontSize: '0.6rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-dim)', marginBottom: 4 }}>Share Code</div>
@@ -354,6 +451,18 @@ export default function DashboardPage() {
                         onClick={() => navigator.clipboard.writeText(`${window.location.origin}/screenshare/${screenCode}`).then(() => toast.success('Link copied!'))}
                         style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid var(--border)', color: '#fff', borderRadius: 8, padding: '10px 16px', fontSize: '0.78rem', cursor: 'pointer' }}
                       >📋 Copy Link</button>
+                    </div>
+                    {/* Allow Interaction toggle */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 8 }}>
+                      <div>
+                        <div style={{ fontSize: '0.8rem', fontWeight: 500 }}>🖱️ Allow Interaction</div>
+                        <div style={{ fontSize: '0.65rem', color: 'var(--text-dim)', marginTop: 2 }}>Viewers can click, scroll & type on your shared tab</div>
+                      </div>
+                      <button
+                        onClick={() => { allowInteractionRef.current = !allowInteractionRef.current; setAllowInteraction(a => !a) }}
+                        style={{ width: 40, height: 22, borderRadius: 11, border: 'none', cursor: 'pointer', transition: 'background 0.2s', background: allowInteraction ? 'var(--green)' : 'rgba(255,255,255,0.15)', position: 'relative', flexShrink: 0 }}>
+                        <div style={{ position: 'absolute', top: 2, left: allowInteraction ? 20 : 2, width: 18, height: 18, borderRadius: '50%', background: '#fff', transition: 'left 0.2s' }} />
+                      </button>
                     </div>
                     <button onClick={stopSharing} style={{ width: '100%', background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171', borderRadius: 8, padding: '12px', fontSize: '0.82rem', cursor: 'pointer', fontFamily: 'Oswald', letterSpacing: '0.08em' }}>
                       ■ Stop Sharing
