@@ -1,11 +1,21 @@
 'use client'
 // src/app/dashboard/page.jsx
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
 import { useAuth } from '@/context/AuthContext'
 import { createRoom, joinRoomByCode } from '@/lib/rooms'
+import { createScreenSession, sendSignal, listenSignals, endScreenSession } from '@/lib/screenshare'
+
+const ICE_CONFIG = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+  ],
+}
 
 function Avatar({ user, size = 40 }) {
   if (user?.photoURL) {
@@ -29,6 +39,18 @@ export default function DashboardPage() {
   const [joining, setJoining] = useState(false)
   const [watchUrl, setWatchUrl] = useState('')
   const [watchUrlError, setWatchUrlError] = useState('')
+
+  // Screen share state
+  const [screenStatus, setScreenStatus] = useState('idle') // idle | sharing
+  const [screenCode, setScreenCode] = useState('')
+  const [viewerCount, setViewerCount] = useState(0)
+  const [watchScreenCode, setWatchScreenCode] = useState('')
+  const screenVideoRef = useRef(null)
+  const screenStreamRef = useRef(null)
+  const sessionIdRef = useRef(null)
+  const pcsRef = useRef({})
+  const viewerCandidatesRef = useRef({})
+  const unsubSignalsRef = useRef(null)
 
   // Extract a clean embed URL from a YouTube, Dailymotion, Vimeo, or arbitrary URL
   function toEmbedUrl(raw) {
@@ -119,6 +141,77 @@ export default function DashboardPage() {
     }
   }
 
+  async function startSharing() {
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } },
+        audio: true,
+      })
+      const session = await createScreenSession(user.uid, user.displayName)
+      screenStreamRef.current = stream
+      sessionIdRef.current = session.id
+      setScreenCode(session.code)
+      setScreenStatus('sharing')
+      if (screenVideoRef.current) screenVideoRef.current.srcObject = stream
+      stream.getVideoTracks()[0].addEventListener('ended', () => stopSharing())
+      unsubSignalsRef.current = listenSignals(session.id, 'host', async (msg) => {
+        const vId = msg.from
+        if (msg.type === 'join') {
+          setViewerCount(c => c + 1)
+          const pc = new RTCPeerConnection(ICE_CONFIG)
+          pcsRef.current[vId] = pc
+          stream.getTracks().forEach(track => pc.addTrack(track, stream))
+          pc.onicecandidate = (e) => {
+            if (e.candidate) sendSignal(session.id, 'host', vId, 'ice', e.candidate)
+          }
+          const offer = await pc.createOffer()
+          await pc.setLocalDescription(offer)
+          await sendSignal(session.id, 'host', vId, 'offer', offer)
+        } else if (msg.type === 'answer') {
+          const pc = pcsRef.current[vId]
+          if (pc) {
+            await pc.setRemoteDescription(new RTCSessionDescription(msg.data))
+            const buffered = viewerCandidatesRef.current[vId] || []
+            for (const c of buffered) { try { await pc.addIceCandidate(new RTCIceCandidate(c)) } catch {} }
+            delete viewerCandidatesRef.current[vId]
+          }
+        } else if (msg.type === 'ice') {
+          const pc = pcsRef.current[vId]
+          if (pc?.remoteDescription) {
+            try { await pc.addIceCandidate(new RTCIceCandidate(msg.data)) } catch {}
+          } else {
+            if (!viewerCandidatesRef.current[vId]) viewerCandidatesRef.current[vId] = []
+            viewerCandidatesRef.current[vId].push(msg.data)
+          }
+        }
+      })
+    } catch (err) {
+      if (err.name !== 'NotAllowedError') toast.error('Screen share failed: ' + (err.message || err.name))
+    }
+  }
+
+  async function stopSharing() {
+    screenStreamRef.current?.getTracks().forEach(t => t.stop())
+    if (sessionIdRef.current) await endScreenSession(sessionIdRef.current)
+    Object.values(pcsRef.current).forEach(pc => pc.close())
+    pcsRef.current = {}
+    viewerCandidatesRef.current = {}
+    unsubSignalsRef.current?.()
+    unsubSignalsRef.current = null
+    screenStreamRef.current = null
+    sessionIdRef.current = null
+    setScreenStatus('idle')
+    setScreenCode('')
+    setViewerCount(0)
+  }
+
+  function handleWatchScreenCode(e) {
+    e.preventDefault()
+    const c = watchScreenCode.trim().toUpperCase()
+    if (c.length < 4) return
+    router.push(`/screenshare/${c}`)
+  }
+
   return (
     <div style={{ minHeight: '100vh', position: 'relative' }}>
       <div className="grid-bg" />
@@ -155,11 +248,12 @@ export default function DashboardPage() {
         </div>
 
         <div className="glass-card" style={{ width: '100%', maxWidth: 520 }}>
-          {/* Tabs — CSS grid so all 3 always fit equally, no scrolling needed */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', borderBottom: '1px solid var(--border)' }}>
+          {/* Tabs — CSS grid so all 4 always fit equally, no scrolling needed */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', borderBottom: '1px solid var(--border)' }}>
             {[
               { key: 'create', label: '🎵 Create' },
-              { key: 'watch',  label: '📺 Watch URL' },
+              { key: 'watch',  label: '📺 Watch' },
+              { key: 'screen', label: '🖥️ Screen' },
               { key: 'join',   label: '🔗 Join' },
             ].map(({ key, label }) => (
               <button
@@ -219,6 +313,54 @@ export default function DashboardPage() {
                   {creating ? <><span className="spinner" /> Creating…</> : 'Create Watch Room 📺'}
                 </button>
               </form>
+            ) : tab === 'screen' ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                {screenStatus === 'idle' ? (
+                  <>
+                    <div style={{ background: 'rgba(147,51,234,0.06)', border: '1px solid rgba(147,51,234,0.2)', borderRadius: 10, padding: '16px 20px', fontSize: '0.875rem', color: 'var(--text-dim)' }}>
+                      <span style={{ color: '#a78bfa', fontWeight: 600 }}>🖥️ Screen Share.</span> Share your screen in high quality with anyone using a 6-char code.
+                    </div>
+                    <button onClick={startSharing} className="btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '15px', background: '#7c3aed', boxShadow: '0 0 20px rgba(124,58,237,0.35)' }}>
+                      🖥️ Start Sharing
+                    </button>
+                    <div style={{ borderTop: '1px solid var(--border)', paddingTop: 20 }}>
+                      <div style={{ fontFamily: 'Oswald', fontSize: '0.78rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-dim)', marginBottom: 12 }}>Watch Someone's Screen</div>
+                      <form onSubmit={handleWatchScreenCode} style={{ display: 'flex', gap: 8 }}>
+                        <input
+                          type="text"
+                          maxLength={6}
+                          placeholder="Share code…"
+                          className="input-vibe"
+                          value={watchScreenCode}
+                          onChange={e => setWatchScreenCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+                          style={{ flex: 1, textAlign: 'center', fontFamily: 'Oswald', fontSize: '1.2rem', letterSpacing: '0.3em', padding: '12px 8px' }}
+                        />
+                        <button type="submit" disabled={watchScreenCode.length < 4} className="btn-primary" style={{ padding: '12px 20px', flexShrink: 0 }}>
+                          👁️ Watch
+                        </button>
+                      </form>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <video ref={screenVideoRef} autoPlay muted playsInline style={{ width: '100%', borderRadius: 8, background: '#000', maxHeight: 200, objectFit: 'contain' }} />
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                      <div>
+                        <div style={{ fontFamily: 'Oswald', fontSize: '0.6rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-dim)', marginBottom: 4 }}>Share Code</div>
+                        <div style={{ fontFamily: 'Oswald', fontSize: '2rem', fontWeight: 700, letterSpacing: '0.3em', color: '#a78bfa' }}>{screenCode}</div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', marginTop: 2 }}>{viewerCount} viewer{viewerCount !== 1 ? 's' : ''} connected</div>
+                      </div>
+                      <button
+                        onClick={() => navigator.clipboard.writeText(`${window.location.origin}/screenshare/${screenCode}`).then(() => toast.success('Link copied!'))}
+                        style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid var(--border)', color: '#fff', borderRadius: 8, padding: '10px 16px', fontSize: '0.78rem', cursor: 'pointer' }}
+                      >📋 Copy Link</button>
+                    </div>
+                    <button onClick={stopSharing} style={{ width: '100%', background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171', borderRadius: 8, padding: '12px', fontSize: '0.82rem', cursor: 'pointer', fontFamily: 'Oswald', letterSpacing: '0.08em' }}>
+                      ■ Stop Sharing
+                    </button>
+                  </>
+                )}
+              </div>
             ) : (
               <form onSubmit={handleJoin} style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
                 <div>

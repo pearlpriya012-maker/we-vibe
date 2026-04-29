@@ -64,7 +64,7 @@ export async function createRoom({ hostId, hostName, hostPhoto, mode, watchUrl }
     currentTime: 0,
     queue: [],
     participantsCanAddToQueue: true,
-    participantsFullControl: false,
+    participantsFullControl: true,
     playedHistory: [],
     musicMode: true,
     createdAt: serverTimestamp(),
