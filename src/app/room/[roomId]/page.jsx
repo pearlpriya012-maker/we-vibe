@@ -383,27 +383,29 @@ function SearchAndQueue({ room, isHost, canAdd, onAddToQueue, onPlayNow, onRemov
     setQuery(q)
     clearTimeout(debRef.current)
     if (!q.trim()) { setGlobalResults([]); setPlaylistResults([]); return }
+    // Only filter playlist cache locally — YouTube search fires on Enter/button click
     debRef.current = setTimeout(async () => {
-      setSearching(true)
-      try {
-        // Load playlist cache if not yet loaded
-        await loadPlaylistCache()
-        // Filter playlist cache
-        if (playlistCacheRef.current) {
-          const filtered = playlistCacheRef.current.filter(t =>
-            t.title.toLowerCase().includes(q.toLowerCase()) ||
-            (t.channelTitle || '').toLowerCase().includes(q.toLowerCase())
-          ).slice(0, 6)
-          setPlaylistResults(filtered)
-        }
-        // Global YouTube search
-        const res = await fetch(`/api/youtube/search?q=${encodeURIComponent(q)}&limit=10`)
-        const data = await res.json()
-        if (!res.ok) throw new Error(data.error || 'Search failed')
-        setGlobalResults(data.results || [])
-      } catch { toast.error('Search failed') }
-      finally { setSearching(false) }
-    }, 800)
+      await loadPlaylistCache()
+      if (playlistCacheRef.current) {
+        const filtered = playlistCacheRef.current.filter(t =>
+          t.title.toLowerCase().includes(q.toLowerCase()) ||
+          (t.channelTitle || '').toLowerCase().includes(q.toLowerCase())
+        ).slice(0, 6)
+        setPlaylistResults(filtered)
+      }
+    }, 200)
+  }
+
+  async function runYouTubeSearch(q) {
+    if (!q?.trim()) return
+    setSearching(true)
+    try {
+      const res = await fetch(`/api/youtube/search?q=${encodeURIComponent(q.trim())}&limit=10`)
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Search failed')
+      setGlobalResults(data.results || [])
+    } catch (err) { toast.error('Search failed') }
+    finally { setSearching(false) }
   }
 
   return (
@@ -554,8 +556,8 @@ function SearchAndQueue({ room, isHost, canAdd, onAddToQueue, onPlayNow, onRemov
         <>
           <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
             <div style={{ position: 'relative' }}>
-              <input type="search" value={query} onChange={e => handleSearch(e.target.value)} placeholder="Search songs, artists…" className="input-vibe" autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} style={{ fontSize: '0.85rem', padding: '10px 36px 10px 12px' }} />
-              <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)' }}>{searching ? '⏳' : '🔍'}</span>
+              <input type="search" value={query} onChange={e => handleSearch(e.target.value)} onKeyDown={e => e.key === 'Enter' && runYouTubeSearch(query)} placeholder="Search songs, artists… ↵" className="input-vibe" autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} style={{ fontSize: '0.85rem', padding: '10px 36px 10px 12px' }} />
+              <button onClick={() => runYouTubeSearch(query)} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: searching ? 'var(--green)' : 'var(--text-dim)', fontSize: '1rem', padding: 2 }}>{searching ? '⏳' : '🔍'}</button>
             </div>
           </div>
 
