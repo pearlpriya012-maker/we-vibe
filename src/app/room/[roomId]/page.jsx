@@ -15,7 +15,6 @@ import {
 import dynamic from 'next/dynamic'
 import GamesOverlay from '@/components/GamesOverlay'
 import GameInviteToast from '@/components/games/GameInviteToast'
-import { subscribeUnoInvite, respondToInvite as respondToUnoInvite } from '@/lib/unoFirestore'
 import { subscribePictionaryInvite, respondToPictionaryInvite } from '@/lib/pictionaryFirestore'
 import { subscribeWordChainInvite, respondToWordChainInvite } from '@/lib/wordChainFirestore'
 import { createScreenSession, sendSignal as sendScreenSignal, listenSignals as listenScreenSignals, endScreenSession } from '@/lib/screenshare'
@@ -627,7 +626,7 @@ function ChatPanel({ roomId, messages, currentUser }) {
                 <span style={{ fontFamily: 'Oswald', fontSize: '0.75rem', fontWeight: 600, color: getColor(msg.uid) }}>{msg.displayName}</span>
                 <span style={{ fontSize: '0.65rem', color: 'var(--text-dim)' }}>{msg.timestamp?.toDate ? msg.timestamp.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</span>
               </div>
-              <div style={{ fontSize: '0.85rem', lineHeight: 1.5, wordBreak: 'break-word' }}>{msg.text}</div>
+              <div style={{ fontSize: '0.85rem', lineHeight: 1.5, wordBreak: 'break-word' }}>{msg.text.split(/(https?:\/\/[^\s]+)/g).map((part, i) => /^https?:\/\//.test(part) ? <a key={i} href={part} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--cyan)', textDecoration: 'underline' }}>{part}</a> : part)}</div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
                 {REACTIONS.map(emoji => {
                   const users = msg.reactions?.[emoji] || []
@@ -948,66 +947,6 @@ function AIBondPanel({ room, canAdd, onAddToQueue, ytAccessToken }) {
   )
 }
 
-// ─── LYRICS PANEL ───
-function LyricsPanel({ lines, plain, synced, loading, currentTime }) {
-  const lineRefs = useRef([])
-  const activeIdx =
-    synced && lines.length
-      ? lines.reduce((best, line, i) => (line.time <= currentTime ? i : best), 0)
-      : -1
-
-  useEffect(() => {
-    if (activeIdx >= 0 && lineRefs.current[activeIdx]) {
-      lineRefs.current[activeIdx].scrollIntoView({ behavior: 'smooth', block: 'center' })
-    }
-  }, [activeIdx])
-
-  if (loading) return (
-    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, color: 'var(--text-dim)', fontSize: '0.85rem' }}>
-      <span className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} /> Loading lyrics…
-    </div>
-  )
-
-  if (synced && lines.length) return (
-    <div style={{ flex: 1, overflowY: 'auto', padding: '24px 12px', display: 'flex', flexDirection: 'column', gap: 2, scrollbarWidth: 'none' }}>
-      <style>{`#lyr-scroll::-webkit-scrollbar{display:none}`}</style>
-      {lines.map((line, i) => (
-        <div
-          key={i}
-          ref={el => { lineRefs.current[i] = el }}
-          style={{
-            textAlign: 'center',
-            padding: '7px 10px',
-            borderRadius: 8,
-            fontSize: i === activeIdx ? '1.05rem' : '0.875rem',
-            fontWeight: i === activeIdx ? 700 : 400,
-            color: i === activeIdx ? '#ffffff' : 'rgba(255,255,255,0.28)',
-            background: i === activeIdx ? 'rgba(0,255,136,0.07)' : 'transparent',
-            transition: 'all 0.35s ease',
-            lineHeight: 1.6,
-          }}
-        >
-          {line.text}
-        </div>
-      ))}
-    </div>
-  )
-
-  if (plain) return (
-    <div style={{ flex: 1, overflowY: 'auto', padding: '20px 16px', color: 'var(--text-dim)', fontSize: '0.85rem', lineHeight: 1.85, whiteSpace: 'pre-line', textAlign: 'center', scrollbarWidth: 'none' }}>
-      <div style={{ marginBottom: 10, fontSize: '0.68rem', fontStyle: 'italic', opacity: 0.5 }}>⚠ Timed sync not available for this track</div>
-      {plain}
-    </div>
-  )
-
-  return (
-    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 10, color: 'var(--text-dim)' }}>
-      <div style={{ fontSize: '2.5rem' }}>🎵</div>
-      <div style={{ fontSize: '0.875rem' }}>No lyrics found for this track</div>
-    </div>
-  )
-}
-
 // ─── MAIN ROOM ───
 export default function RoomPage() {
   const { roomId } = useParams()
@@ -1022,7 +961,6 @@ export default function RoomPage() {
   const [copiedLink, setCopiedLink] = useState(false)
   const [showGames, setShowGames] = useState(false)
   const [showHeaderMenu, setShowHeaderMenu] = useState(false)
-  const [unoInvite, setUnoInvite] = useState(null)
   const [pictionaryInvite, setPictionaryInvite] = useState(null)
   const [wordchainInvite, setWordchainInvite] = useState(null)
   const [directGame, setDirectGame] = useState(null)
@@ -1073,12 +1011,9 @@ export default function RoomPage() {
   const keepAliveAudioRef = useRef(null)    // <audio> element driven by the keepalive stream
   const bgWatchdogRef = useRef(null)        // interval that fights YouTube auto-pause while tab is hidden
   const lastSkipAtRef = useRef(0)           // timestamp of last skipToNext call — prevents double-skip when watchdog + handleStateChange both fire
-  const pipLyricsRef = useRef(true)         // whether to show lyrics in PiP canvas
-  const [pipLyricsOn, setPipLyricsOn] = useState(true) // mirrors pipLyricsRef for UI
   const canvasPipRef = useRef(null)         // hidden canvas fed into video PiP
   const videoPipRef = useRef(null)          // hidden <video> — requestPictureInPicture target
   const canvasPipIntervalRef = useRef(null) // holds { cancel() } to stop rAF + watchdog
-  const lyricsRef = useRef(null)            // always-fresh lyrics snapshot for canvas drawFrame
   // Watch URL room sync
   const watchIframeRef = useRef(null)       // ref to watch URL <iframe> (non-YT only)
   const watchYtPlayerRef = useRef(null)     // real YT.Player for watch room YouTube videos
@@ -1099,9 +1034,6 @@ export default function RoomPage() {
   const screenViewerCandidatesRef = useRef({})
   const screenViewerNamesRef = useRef({})
   const unsubScreenSignalsRef = useRef(null)
-  const [lyrics, setLyrics] = useState({ lines: [], plain: null, synced: false, loading: false })
-  lyricsRef.current = lyrics // keep ref fresh for canvas drawFrame (avoids stale closure)
-
   const isHost = room?.hostId === user?.uid
   // canAdd = can add songs to queue
   const canAdd = isHost || room?.participantsCanAddToQueue || room?.participantsFullControl
@@ -1114,12 +1046,6 @@ export default function RoomPage() {
     if (!user) { router.replace('/'); return }
     return subscribeToRoom(roomId, data => { setRoom(data); roomRef.current = data; setLoading(false) })
   }, [roomId, user])
-
-  // ─── UNO invite subscription
-  useEffect(() => {
-    if (!roomId) return
-    return subscribeUnoInvite(roomId, setUnoInvite)
-  }, [roomId])
 
   // ─── Pictionary invite subscription
   useEffect(() => {
@@ -1146,24 +1072,6 @@ export default function RoomPage() {
     })
     return () => unsub?.()
   }, [user?.uid])
-
-  // ─── Fetch synced lyrics when track changes ───
-  useEffect(() => {
-    if (!room?.currentTrack?.videoId) {
-      setLyrics({ lines: [], plain: null, synced: false, loading: false })
-      return
-    }
-    const track = room.currentTrack
-    const title = track.title || ''
-    const artist = (track.channelTitle || '').replace(/\s*-\s*Topic$/i, '').trim()
-    setLyrics(prev => ({ ...prev, loading: true }))
-    fetch(
-      `/api/lyrics?title=${encodeURIComponent(title)}&artist=${encodeURIComponent(artist)}&duration=${Math.round(duration || 0)}`
-    )
-      .then(r => r.json())
-      .then(data => setLyrics({ lines: data.lines || [], plain: data.plain || null, synced: data.synced || false, loading: false }))
-      .catch(() => setLyrics({ lines: [], plain: null, synced: false, loading: false }))
-  }, [room?.currentTrack?.videoId])
 
   // ─── Refresh expired YouTube access token using stored refresh token ───
   async function refreshYtToken() {
@@ -1197,7 +1105,7 @@ export default function RoomPage() {
   // ─── Sync music mode from Firebase ───
   useEffect(() => {
     if (room?.musicMode !== undefined) {
-      setMusicMode(room.musicMode)
+      setMusicMode(room.musicMode ?? true)
     }
   }, [room?.musicMode])
 
@@ -1811,8 +1719,7 @@ export default function RoomPage() {
 
   // ─── Picture-in-Picture mini player ─────────────────────────────────────
   // Primary: Document PiP API (Chrome 116+) — exact 260×110 popup with HTML controls.
-  //   • Lyrics toggle works live (reads pipLyricsRef.current each frame).
-  //   • Real ⏪ ▶/⏸ ⏩ 🎤 buttons rendered in the popup window.
+  //   • Real ⏪ ▶/⏸ ⏩ buttons rendered in the popup window.
   // Fallback: canvas → video.requestPictureInPicture().
   async function openMobilePip() {
     const W = 260 // fixed width; height = 66 canvas + 44 controls bar
@@ -1863,14 +1770,13 @@ export default function RoomPage() {
       img.src = url
     }
 
-    // ── Canvas draw: fixed 260×H canvas, reads pipLyricsRef.current LIVE each frame ──
+    // ── Canvas draw: fixed 260×H canvas ──
     function makeDrawFrame(ctx, H) {
       return function drawFrame() {
         anim.frame++
         const liveRoom = roomRef.current
         const track = liveRoom?.currentTrack
         const playing = liveRoom?.isPlaying
-        const showLyrics = pipLyricsRef.current   // read live — toggle works immediately
         if (track?.videoId !== anim.lastTrackId) {
           anim.lastTrackId = track?.videoId || null
           anim.thumbImg = null; anim.skipFired = false
@@ -1925,37 +1831,10 @@ export default function RoomPage() {
         const title = track?.title||'Nothing playing'
         const artist = (track?.channelTitle||'').replace(/\s*-\s*Topic$/i,'').trim()
         ctx.textBaseline='alphabetic'; ctx.textAlign='left'
-        if (showLyrics) {
-          ctx.font='bold 10px system-ui'; ctx.fillStyle='#fff'
-          ctx.fillText(trunc(title,txW),txX,14)
-          ctx.font='8px system-ui'; ctx.fillStyle='rgba(255,255,255,0.5)'
-          ctx.fillText(trunc(artist,txW),txX,25)
-          // Live lyrics line
-          const lyrSnap=lyricsRef.current
-          const hasSync=lyrSnap?.synced&&lyrSnap?.lines?.length>0
-          const plainText=!hasSync&&lyrSnap?.plain?lyrSnap.plain:null
-          if (hasSync) {
-            const lines=lyrSnap.lines
-            const ai=lines.reduce((best,l,i)=>l.time<=ct?i:best,0)
-            ctx.font='bold 10px system-ui'; ctx.fillStyle=accentRGB
-            ctx.fillText(trunc(lines[ai].text,txW),txX,40)
-            if (lines[ai+1]){ctx.font='8px system-ui';ctx.fillStyle=`rgba(${ar},${ag},${ab},0.6)`;ctx.fillText(trunc(lines[ai+1].text,txW),txX,52)}
-          } else if (plainText?.trim().length>4) {
-            const pl=plainText.split('\n').map(l=>l.trim()).filter(l=>l)
-            const pi=dur>5?Math.min(pl.length-1,Math.floor((ct/dur)*pl.length)):0
-            ctx.font='bold 10px system-ui'; ctx.fillStyle=accentRGB
-            ctx.fillText(trunc(pl[pi]||'',txW),txX,40)
-            if (pl[pi+1]){ctx.font='8px system-ui';ctx.fillStyle=`rgba(${ar},${ag},${ab},0.6)`;ctx.fillText(trunc(pl[pi+1],txW),txX,52)}
-          } else {
-            ctx.font='9px system-ui'; ctx.fillStyle='rgba(255,255,255,0.2)'
-            ctx.fillText('No lyrics',txX,40)
-          }
-        } else {
-          ctx.font='bold 11px system-ui'; ctx.fillStyle='#fff'
-          ctx.fillText(trunc(title,txW),txX,22)
-          ctx.font='9px system-ui'; ctx.fillStyle='rgba(255,255,255,0.5)'
-          ctx.fillText(trunc(artist,txW),txX,35)
-        }
+        ctx.font='bold 11px system-ui'; ctx.fillStyle='#fff'
+        ctx.fillText(trunc(title,txW),txX,22)
+        ctx.font='9px system-ui'; ctx.fillStyle='rgba(255,255,255,0.5)'
+        ctx.fillText(trunc(artist,txW),txX,35)
         // Progress sliver at bottom
         ctx.fillStyle='rgba(255,255,255,0.1)'; ctx.fillRect(0,H-2,W,2)
         ctx.fillStyle=accentRGB; ctx.fillRect(0,H-2,W*pct,2)
@@ -2045,12 +1924,11 @@ export default function RoomPage() {
 
     // ════════════════════════════════════════════════════════
     //  PRIMARY: Document Picture-in-Picture (Chrome 116+)
-    //  HTML overlay layout: art | title/artist/controls + progress bar + lyrics
+    //  HTML overlay layout: art | title/artist/controls + progress bar
     // ════════════════════════════════════════════════════════
     if ('documentPictureInPicture' in window) {
       try {
-        // Height: top section (~68px) + progress (3px) + 3 lyric lines (66px) + padding = ~155px
-        const H_INIT = pipLyricsRef.current ? 155 : 78
+        const H_INIT = 78
         const pipWin = await window.documentPictureInPicture.requestWindow({ width: W, height: H_INIT })
         const d = pipWin.document
         d.body.style.cssText = 'margin:0;padding:0;overflow:hidden;background:#0a0a12;height:100%;'
@@ -2070,10 +1948,6 @@ export default function RoomPage() {
           .cb{background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);color:#fff;font-size:11px;padding:0;cursor:pointer;border-radius:5px;display:flex;align-items:center;justify-content:center;line-height:1}
           #pw{flex-shrink:0;height:3px;background:rgba(255,255,255,0.1);cursor:pointer;position:relative}
           #pf{height:100%;width:0;background:var(--ac,#f97316);transition:width 0.25s linear}
-          #lyr{flex:1;overflow:hidden;padding:5px 8px 4px;display:none;flex-direction:column;gap:1px;min-height:0}
-          .ll{font-size:10px;line-height:21px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:rgba(255,255,255,0.32)}
-          .ll.a{color:var(--ac,#f97316);font-weight:700}
-          .ll.n{color:rgba(255,255,255,0.65)}
         `
         d.head.appendChild(sty)
 
@@ -2089,12 +1963,10 @@ export default function RoomPage() {
                   <button class="cb" id="b-pv" style="width:26px;height:20px" title="Previous song">\u23ee</button>
                   <button class="cb" id="b-pl" style="width:32px;height:20px;background:rgba(0,255,136,0.18)" title="Play/Pause">\u25b6</button>
                   <button class="cb" id="b-sk" style="width:26px;height:20px" title="Next song">\u23ed</button>
-                  <button class="cb" id="b-ly" style="width:26px;height:20px" title="Lyrics">\uD83C\uDF99</button>
                 </div>
               </div>
             </div>
             <div id="pw"><div id="pf"></div></div>
-            <div id="lyr"></div>
           </div>
         `
 
@@ -2102,11 +1974,9 @@ export default function RoomPage() {
         const ttlEl  = d.getElementById('ttl')
         const artEl2 = d.getElementById('arti')
         const pfEl   = d.getElementById('pf')
-        const lyrEl  = d.getElementById('lyr')
         const bPv    = d.getElementById('b-pv')
         const bPl    = d.getElementById('b-pl')
         const bSk    = d.getElementById('b-sk')
-        const bLy    = d.getElementById('b-ly')
 
         const setAccent = () => {
           const css = `rgb(${anim.accent[0]},${anim.accent[1]},${anim.accent[2]})`
@@ -2126,16 +1996,6 @@ export default function RoomPage() {
           if (roomRef.current?.hostId === user?.uid) skipToNext(roomId).catch(()=>{})
           else import('firebase/firestore').then(({updateDoc,doc})=>import('@/lib/firebase').then(({db})=>updateDoc(doc(db,'rooms',roomId),{skipRequested:Date.now()}).catch(()=>{}) ))
         }
-        bLy.onclick = () => {
-          const v = !pipLyricsRef.current
-          pipLyricsRef.current = v; setPipLyricsOn(v)
-          bLy.innerHTML = v ? '\uD83C\uDF99' : '\uD83D\uDD07'
-          bLy.style.background = v ? 'rgba(249,115,22,0.28)' : 'rgba(255,255,255,0.08)'
-          lyrEl.style.display = v ? 'flex' : 'none'
-        }
-        // Init lyrics toggle state
-        if (!pipLyricsRef.current) { bLy.innerHTML = '\uD83D\uDD07' }
-        else { bLy.style.background = 'rgba(249,115,22,0.28)'; lyrEl.style.display = 'flex' }
 
         // Seekable progress bar
         d.getElementById('pw').onclick = ev => {
@@ -2145,7 +2005,7 @@ export default function RoomPage() {
         }
 
         // ── Per-frame update ──
-        let prevAcStr = '', lastLyrHash = ''
+        let prevAcStr = ''
         const updateUI = () => {
           const liveRoom = roomRef.current
           const track    = liveRoom?.currentTrack
@@ -2210,32 +2070,6 @@ export default function RoomPage() {
           let ct = 0, dr = 0
           try { const p=ytPlayerRef.current; ct=p?.getCurrentTime?.()||0; dr=p?.getDuration?.()||0 } catch {}
           pfEl.style.width = (dr > 0 ? Math.min(100, (ct/dr)*100) : 0) + '%'
-
-          // Lyrics (only update when visible)
-          if (pipLyricsRef.current) {
-            const maxLines = Math.max(3, Math.floor((lyrEl.offsetHeight || 66) / 21))
-            const lyrSnap  = lyricsRef.current
-            const hasSync  = lyrSnap?.synced && lyrSnap?.lines?.length > 0
-            let rows = []
-            if (hasSync) {
-              const all = lyrSnap.lines
-              const ai  = all.reduce((best,l,i) => l.time <= ct ? i : best, 0)
-              const s   = Math.max(0, ai - 1), e = Math.min(all.length, s + maxLines)
-              rows = all.slice(s,e).map((l,i) => ({ t:l.text, c:(s+i)===ai ? 'a' : (s+i)===ai+1 ? 'n' : '' }))
-            } else if (lyrSnap?.plain?.trim().length > 4) {
-              const pl = lyrSnap.plain.split('\n').map(l=>l.trim()).filter(l=>l)
-              const pi = dr > 5 ? Math.min(pl.length-1, Math.floor((ct/dr)*pl.length)) : 0
-              const s  = Math.max(0, pi-1), e = Math.min(pl.length, s+maxLines)
-              rows = pl.slice(s,e).map((t,i) => ({ t, c:(s+i)===pi ? 'a' : '' }))
-            } else {
-              rows = [{ t:'No lyrics available', c:'' }]
-            }
-            const h = rows.map(r => r.c + r.t).join('|')
-            if (h !== lastLyrHash) {
-              lastLyrHash = h
-              lyrEl.innerHTML = rows.map(r => `<div class="ll ${r.c}">${r.t.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</div>`).join('')
-            }
-          }
         }
 
         let rafId = null
@@ -2804,14 +2638,12 @@ export default function RoomPage() {
               <button onClick={handlePlayPause} style={{ width: compact ? 46 : 52, height: compact ? 46 : 52, borderRadius: '50%', background: 'var(--green)', border: 'none', cursor: 'pointer', fontSize: compact ? '1rem' : '1.2rem', color: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 20px rgba(0,255,136,0.4)', transition: 'transform 0.15s' }}>{room.isPlaying ? '⏸' : '▶'}</button>
               <button onClick={() => skipToNext(roomId)} style={{ width: compact ? 36 : 40, height: compact ? 36 : 40, borderRadius: '50%', background: 'var(--glass)', border: '1px solid var(--border)', cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}>⏭</button>
               {volumeWidget}
-              {compact && <button onClick={() => setMobileTab('lyrics')} title="Lyrics" style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--glass)', border: '1px solid rgba(249,115,22,0.4)', cursor: 'pointer', fontSize: '0.85rem', color: '#f97316', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>📝</button>}
               {compact && <button onClick={openMobilePip} title="Open in PiP" style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--glass)', border: '1px solid var(--border)', cursor: 'pointer', fontSize: '0.8rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>⛶</button>}
             </div>
           ) : (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
               <div style={{ textAlign: 'center', color: 'var(--text-dim)', fontSize: '0.8rem', fontStyle: 'italic' }}>{room.isPlaying ? '▶ Playing • Synced with host' : '⏸ Paused by host'}</div>
               {volumeWidget}
-              {compact && <button onClick={() => setMobileTab('lyrics')} title="Lyrics" style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--glass)', border: '1px solid rgba(249,115,22,0.4)', cursor: 'pointer', fontSize: '0.85rem', color: '#f97316', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>📝</button>}
               {compact && <button onClick={openMobilePip} title="Open in PiP" style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--glass)', border: '1px solid var(--border)', cursor: 'pointer', fontSize: '0.8rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>⛶</button>}
             </div>
           )}
@@ -2989,8 +2821,7 @@ export default function RoomPage() {
           </div>
         </header>
 
-        {showGames && <GamesOverlay roomId={roomId} roomParticipants={room.participants || []} currentUser={user} onClose={() => { setShowGames(false); setDirectGame(null) }} unoInvite={unoInvite} pictionaryInvite={pictionaryInvite} wordchainInvite={wordchainInvite} initialGame={directGame} />}
-        <GameInviteToast invite={unoInvite}        game="uno"        respondFn={respondToUnoInvite}        currentUser={user} roomId={roomId} onAccept={() => { setDirectGame('uno');        setShowGames(true) }} onDecline={() => {}} />
+        {showGames && <GamesOverlay roomId={roomId} roomParticipants={room.participants || []} currentUser={user} onClose={() => { setShowGames(false); setDirectGame(null) }} pictionaryInvite={pictionaryInvite} wordchainInvite={wordchainInvite} initialGame={directGame} />}
         <GameInviteToast invite={pictionaryInvite} game="pictionary" respondFn={respondToPictionaryInvite} currentUser={user} roomId={roomId} onAccept={() => { setDirectGame('pictionary'); setShowGames(true) }} onDecline={() => {}} />
         <GameInviteToast invite={wordchainInvite}  game="wordchain"  respondFn={respondToWordChainInvite}  currentUser={user} roomId={roomId} onAccept={() => { setDirectGame('wordchain');  setShowGames(true) }} onDecline={() => {}} />
 
@@ -3042,7 +2873,7 @@ export default function RoomPage() {
           <div style={{ flexShrink: 0, display: 'flex', borderBottom: '1px solid var(--border)', background: 'rgba(13,13,13,0.97)', overflowX: 'auto', scrollbarWidth: 'none', position: musicMode ? 'static' : 'sticky', top: 0, zIndex: musicMode ? 'auto' : 5, backdropFilter: 'blur(12px)' }}>
             <style>{`#mob-tabs::-webkit-scrollbar{display:none}`}</style>
             <div id="mob-tabs" style={{ display: 'flex', width: '100%' }}>
-              {[['search','🔍','Search'],['queue','🎵','Queue'],['playlists','📋','Playlist'],['chat','💬','Chat'],['ai','🐻‍❄️','AI Bond'],['lyrics','📝','Lyrics']].map(([id, icon, label]) => {
+              {[['search','🔍','Search'],['queue','🎵','Queue'],['playlists','📋','Playlist'],['chat','💬','Chat'],['ai','🐻‍❄️','AI Bond']].map(([id, icon, label]) => {
                 const unread = id === 'chat' && floatMsg
                 return (
                   <button key={id} onClick={() => setMobileTab(id)}
@@ -3057,18 +2888,15 @@ export default function RoomPage() {
           </div>
 
           {/* ── Tab Content ── */}
-          <div style={{ flex: musicMode ? 1 : 'none', overflow: musicMode ? 'hidden' : 'visible', minHeight: 0, position: 'relative' }}>
-            <div style={{ display: mobileTab === 'search' || mobileTab === 'queue' || mobileTab === 'playlists' ? 'flex' : 'none', flexDirection: 'column', height: musicMode ? '100%' : 'auto', overflow: musicMode ? 'hidden' : 'visible' }}>
+          <div style={{ flex: musicMode ? 1 : 'none', height: musicMode ? undefined : '68vh', overflow: 'hidden', minHeight: 0, position: 'relative' }}>
+            <div style={{ display: mobileTab === 'search' || mobileTab === 'queue' || mobileTab === 'playlists' ? 'flex' : 'none', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
               <SearchAndQueue room={room} isHost={canFullControl} canAdd={canAdd} onAddToQueue={handleAddToQueue} onPlayNow={handlePlayNow} onRemove={i => canFullControl && removeFromQueue(roomId, i)} ytAccessToken={ytToken} initialTab={mobileTab === 'playlists' ? 'playlists' : mobileTab === 'queue' ? 'queue' : 'search'} hideTabs={true} roomId={roomId} playedHistory={room.playedHistory || []} onStartPlaylist={handleStartPlaylist} onShufflePlaylist={handleShufflePlaylist} onTokenExpired={refreshYtToken} />
             </div>
-            <div style={{ display: mobileTab === 'ai' ? 'flex' : 'none', flexDirection: 'column', height: musicMode ? '100%' : 'auto', overflow: musicMode ? 'hidden' : 'visible' }}>
+            <div style={{ display: mobileTab === 'ai' ? 'flex' : 'none', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
               <AIBondPanel room={room} canAdd={canAdd} onAddToQueue={handleAddToQueue} ytAccessToken={ytToken} />
             </div>
-            <div style={{ display: mobileTab === 'chat' ? 'flex' : 'none', flexDirection: 'column', height: musicMode ? '100%' : '68vh', overflow: 'hidden' }}>
+            <div style={{ display: mobileTab === 'chat' ? 'flex' : 'none', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
               <ChatPanel roomId={roomId} messages={messages} currentUser={user} />
-            </div>
-            <div style={{ display: mobileTab === 'lyrics' ? 'flex' : 'none', flexDirection: 'column', height: musicMode ? '100%' : '68vh', overflow: 'hidden' }}>
-              <LyricsPanel lines={lyrics.lines} plain={lyrics.plain} synced={lyrics.synced} loading={lyrics.loading} currentTime={currentTime} />
             </div>
           </div>
 
@@ -3122,8 +2950,7 @@ export default function RoomPage() {
             )}
           </div>
         </header>
-        {showGames && <GamesOverlay roomId={roomId} roomParticipants={room.participants || []} currentUser={user} onClose={() => { setShowGames(false); setDirectGame(null) }} unoInvite={unoInvite} pictionaryInvite={pictionaryInvite} wordchainInvite={wordchainInvite} initialGame={directGame} />}
-        <GameInviteToast invite={unoInvite}        game="uno"        respondFn={respondToUnoInvite}        currentUser={user} roomId={roomId} onAccept={() => { setDirectGame('uno');        setShowGames(true) }} onDecline={() => {}} />
+        {showGames && <GamesOverlay roomId={roomId} roomParticipants={room.participants || []} currentUser={user} onClose={() => { setShowGames(false); setDirectGame(null) }} pictionaryInvite={pictionaryInvite} wordchainInvite={wordchainInvite} initialGame={directGame} />}
         <GameInviteToast invite={pictionaryInvite} game="pictionary" respondFn={respondToPictionaryInvite} currentUser={user} roomId={roomId} onAccept={() => { setDirectGame('pictionary'); setShowGames(true) }} onDecline={() => {}} />
         <GameInviteToast invite={wordchainInvite}  game="wordchain"  respondFn={respondToWordChainInvite}  currentUser={user} roomId={roomId} onAccept={() => { setDirectGame('wordchain');  setShowGames(true) }} onDecline={() => {}} />
 
@@ -3308,8 +3135,7 @@ export default function RoomPage() {
           </div>
         </header>
 
-        {showGames && <GamesOverlay roomId={roomId} roomParticipants={room.participants || []} currentUser={user} onClose={() => { setShowGames(false); setDirectGame(null) }} unoInvite={unoInvite} pictionaryInvite={pictionaryInvite} wordchainInvite={wordchainInvite} initialGame={directGame} />}
-        <GameInviteToast invite={unoInvite}        game="uno"        respondFn={respondToUnoInvite}        currentUser={user} roomId={roomId} onAccept={() => { setDirectGame('uno');        setShowGames(true) }} onDecline={() => {}} />
+        {showGames && <GamesOverlay roomId={roomId} roomParticipants={room.participants || []} currentUser={user} onClose={() => { setShowGames(false); setDirectGame(null) }} pictionaryInvite={pictionaryInvite} wordchainInvite={wordchainInvite} initialGame={directGame} />}
         <GameInviteToast invite={pictionaryInvite} game="pictionary" respondFn={respondToPictionaryInvite} currentUser={user} roomId={roomId} onAccept={() => { setDirectGame('pictionary'); setShowGames(true) }} onDecline={() => {}} />
         <GameInviteToast invite={wordchainInvite}  game="wordchain"  respondFn={respondToWordChainInvite}  currentUser={user} roomId={roomId} onAccept={() => { setDirectGame('wordchain');  setShowGames(true) }} onDecline={() => {}} />
 
@@ -3454,8 +3280,7 @@ export default function RoomPage() {
         </div>
       </header>
 
-      {showGames && <GamesOverlay roomId={roomId} roomParticipants={room.participants || []} currentUser={user} onClose={() => { setShowGames(false); setDirectGame(null) }} unoInvite={unoInvite} pictionaryInvite={pictionaryInvite} wordchainInvite={wordchainInvite} initialGame={directGame} />}
-      <GameInviteToast invite={unoInvite}        game="uno"        respondFn={respondToUnoInvite}        currentUser={user} roomId={roomId} onAccept={() => { setDirectGame('uno');        setShowGames(true) }} onDecline={() => {}} />
+      {showGames && <GamesOverlay roomId={roomId} roomParticipants={room.participants || []} currentUser={user} onClose={() => { setShowGames(false); setDirectGame(null) }} pictionaryInvite={pictionaryInvite} wordchainInvite={wordchainInvite} initialGame={directGame} />}
       <GameInviteToast invite={pictionaryInvite} game="pictionary" respondFn={respondToPictionaryInvite} currentUser={user} roomId={roomId} onAccept={() => { setDirectGame('pictionary'); setShowGames(true) }} onDecline={() => {}} />
       <GameInviteToast invite={wordchainInvite}  game="wordchain"  respondFn={respondToWordChainInvite}  currentUser={user} roomId={roomId} onAccept={() => { setDirectGame('wordchain');  setShowGames(true) }} onDecline={() => {}} />
 
@@ -3585,10 +3410,6 @@ export default function RoomPage() {
                       <button onClick={openMobilePip} title="Open in PiP" style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--glass)', border: '1px solid var(--border)', cursor: 'pointer', fontSize: '0.8rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>⛶</button>
                     </div>
                   )}
-                  {/* Lyrics — fills remaining height */}
-                  <div style={{ flex: 1, width: '100%', maxWidth: 400, overflow: 'hidden' }}>
-                    <LyricsPanel lines={lyrics.lines} plain={lyrics.plain} synced={lyrics.synced} loading={lyrics.loading} currentTime={currentTime} />
-                  </div>
                 </div>
               ) : (
                 // Video mode controls
@@ -3639,7 +3460,7 @@ export default function RoomPage() {
         {/* Right */}
         <div style={{ borderLeft: videoFocus ? 'none' : '1px solid var(--border)', background: 'rgba(13,13,13,0.6)', display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
           <div className="tab-bar">
-            {[['chat', '💬 Chat'], ['participants', '👥 People'], ['ai', '🐻‍❄️ AI Bond'], ['lyrics', '📝 Lyrics']].map(([id, label]) => (
+            {[['chat', '💬 Chat'], ['participants', '👥 People'], ['ai', '🐻‍❄️ AI Bond']].map(([id, label]) => (
               <button key={id} className={`tab-btn ${rightTab === id ? 'active' : ''}`} onClick={() => setRightTab(id)} style={{ fontSize: '0.7rem' }}>{label}</button>
             ))}
           </div>
@@ -3647,7 +3468,6 @@ export default function RoomPage() {
             {rightTab === 'chat' && <ChatPanel roomId={roomId} messages={messages} currentUser={user} />}
             {rightTab === 'participants' && <ParticipantsPanel room={room} currentUser={user} isHost={isHost} roomId={roomId} />}
             {rightTab === 'ai' && <AIBondPanel room={room} canAdd={canAdd} onAddToQueue={handleAddToQueue} ytAccessToken={ytToken} />}
-            {rightTab === 'lyrics' && <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}><LyricsPanel lines={lyrics.lines} plain={lyrics.plain} synced={lyrics.synced} loading={lyrics.loading} currentTime={currentTime} /></div>}
           </div>
         </div>
       </div>

@@ -4,21 +4,10 @@
 // Click a game to launch it; music keeps playing underneath.
 
 import { useState } from 'react'
-import UnoGame from './games/UnoGame'
 import PictionaryGame from './games/PictionaryGame'
 import WordChainGame from './games/WordChainGame'
 
 const GAMES = [
-  {
-    id: 'uno',
-    name: 'UNO',
-    icon: '🃏',
-    desc: 'The classic card game. Match colors & numbers, play action cards, be the first to empty your hand.',
-    players: '2–10',
-    available: true,
-    gradient: 'linear-gradient(135deg, #e74c3c 0%, #2980b9 100%)',
-    glow: 'rgba(231,76,60,0.35)',
-  },
   {
     id: 'pictionary',
     name: 'Pictionary',
@@ -75,11 +64,11 @@ function GameCard({ game, onSelect }) {
   )
 }
 
-export default function GamesOverlay({ roomId, roomParticipants, currentUser, onClose, unoInvite, pictionaryInvite, wordchainInvite, initialGame }) {
+export default function GamesOverlay({ roomId, roomParticipants, currentUser, onClose, pictionaryInvite, wordchainInvite, initialGame }) {
   const [activeGame, setActiveGame] = useState(initialGame || null)
 
-  if (activeGame === 'uno' || activeGame === 'pictionary' || activeGame === 'wordchain') {
-    const gameLabel = activeGame === 'uno' ? 'UNO' : activeGame === 'pictionary' ? 'PICTIONARY' : 'WORD CHAIN'
+  if (activeGame === 'pictionary' || activeGame === 'wordchain') {
+    const gameLabel = activeGame === 'pictionary' ? 'PICTIONARY' : 'WORD CHAIN'
     return (
       <div style={{
         position: 'fixed', inset: 0, zIndex: 1000,
@@ -94,15 +83,6 @@ export default function GamesOverlay({ roomId, roomParticipants, currentUser, on
           </button>
           <span style={{ fontFamily: 'Oswald', fontSize: '0.8rem', color: 'rgba(255,255,255,0.2)', letterSpacing: '0.15em' }}>{gameLabel}</span>
         </div>
-        {activeGame === 'uno' && (
-          <UnoGame
-            roomId={roomId}
-            roomParticipants={roomParticipants}
-            currentUser={currentUser}
-            invite={unoInvite}
-            onClose={() => setActiveGame(null)}
-          />
-        )}
         {activeGame === 'pictionary' && (
           <PictionaryGame
             roomId={roomId}
