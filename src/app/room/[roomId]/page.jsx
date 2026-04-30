@@ -383,7 +383,6 @@ function SearchAndQueue({ room, isHost, canAdd, onAddToQueue, onPlayNow, onRemov
     setQuery(q)
     clearTimeout(debRef.current)
     if (!q.trim()) { setGlobalResults([]); setPlaylistResults([]); return }
-    // Only filter playlist cache locally — YouTube search fires on Enter/button click
     debRef.current = setTimeout(async () => {
       await loadPlaylistCache()
       if (playlistCacheRef.current) {
@@ -393,7 +392,8 @@ function SearchAndQueue({ room, isHost, canAdd, onAddToQueue, onPlayNow, onRemov
         ).slice(0, 6)
         setPlaylistResults(filtered)
       }
-    }, 200)
+      runYouTubeSearch(q)
+    }, 600)
   }
 
   async function runYouTubeSearch(q) {
@@ -556,7 +556,7 @@ function SearchAndQueue({ room, isHost, canAdd, onAddToQueue, onPlayNow, onRemov
         <>
           <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
             <form onSubmit={e => { e.preventDefault(); runYouTubeSearch(query) }} style={{ position: 'relative' }}>
-              <input type="search" value={query} onChange={e => handleSearch(e.target.value)} onKeyDown={e => e.key === 'Enter' && runYouTubeSearch(query)} onSearch={e => runYouTubeSearch(e.target.value)} placeholder="Search… then tap 🔍" className="input-vibe" autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} style={{ fontSize: '0.85rem', padding: '10px 36px 10px 12px' }} />
+              <input type="search" value={query} onChange={e => handleSearch(e.target.value)} onKeyDown={e => e.key === 'Enter' && runYouTubeSearch(query)} onSearch={e => runYouTubeSearch(e.target.value)} placeholder="Search songs or artists…" className="input-vibe" autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} style={{ fontSize: '0.85rem', padding: '10px 36px 10px 12px' }} />
               <button type="submit" style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: searching ? 'var(--green)' : 'var(--text-dim)', fontSize: '1rem', padding: 2 }}>{searching ? '⏳' : '🔍'}</button>
             </form>
           </div>
@@ -2959,17 +2959,17 @@ export default function RoomPage() {
           </div>
 
           {/* ── Tab Content ── */}
-          <div style={{ flex: musicMode ? 1 : 'none', height: musicMode ? undefined : '68vh', overflow: 'hidden', minHeight: 0, position: 'relative' }}>
-            <div style={{ display: mobileTab === 'search' || mobileTab === 'queue' || mobileTab === 'playlists' ? 'flex' : 'none', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+          <div style={{ flex: musicMode ? 1 : 'none', overflow: musicMode ? 'hidden' : 'visible', minHeight: 0, position: 'relative' }}>
+            <div style={{ display: mobileTab === 'search' || mobileTab === 'queue' || mobileTab === 'playlists' ? 'flex' : 'none', flexDirection: 'column', height: musicMode ? '100%' : 'auto', overflow: musicMode ? 'hidden' : 'visible' }}>
               <SearchAndQueue room={room} isHost={canFullControl} canAdd={canAdd} onAddToQueue={handleAddToQueue} onPlayNow={handlePlayNow} onRemove={i => canFullControl && removeFromQueue(roomId, i)} ytAccessToken={ytToken} initialTab={mobileTab === 'playlists' ? 'playlists' : mobileTab === 'queue' ? 'queue' : 'search'} hideTabs={true} roomId={roomId} playedHistory={room.playedHistory || []} onStartPlaylist={handleStartPlaylist} onShufflePlaylist={handleShufflePlaylist} onTokenExpired={refreshYtToken} />
             </div>
-            <div style={{ display: mobileTab === 'ai' ? 'flex' : 'none', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+            <div style={{ display: mobileTab === 'ai' ? 'flex' : 'none', flexDirection: 'column', height: musicMode ? '100%' : 'auto', overflow: musicMode ? 'hidden' : 'visible' }}>
               <AIBondPanel room={room} canAdd={canAdd} onAddToQueue={handleAddToQueue} ytAccessToken={ytToken} />
             </div>
-            <div style={{ display: mobileTab === 'chat' ? 'flex' : 'none', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+            <div style={{ display: mobileTab === 'chat' ? 'flex' : 'none', flexDirection: 'column', height: musicMode ? '100%' : '68vh', overflow: 'hidden' }}>
               <ChatPanel roomId={roomId} messages={messages} currentUser={user} />
             </div>
-            <div style={{ display: mobileTab === 'lyrics' ? 'flex' : 'none', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+            <div style={{ display: mobileTab === 'lyrics' ? 'flex' : 'none', flexDirection: 'column', height: musicMode ? '100%' : '68vh', overflow: 'hidden' }}>
               <LyricsPanel lines={lyrics.lines} plain={lyrics.plain} synced={lyrics.synced} loading={lyrics.loading} currentTime={currentTime} />
             </div>
           </div>
