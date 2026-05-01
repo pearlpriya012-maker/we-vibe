@@ -126,8 +126,10 @@ function PlaylistPanel({ onAddToQueue, canAdd, ytAccessToken, onStartPlaylist, o
   const [loading, setLoading] = useState(!cachedPlaylists && !!ytAccessToken)
   const [selectedPlaylist, setSelectedPlaylist] = useState(null)
   const [selectedPlaylistMeta, setSelectedPlaylistMeta] = useState(null)
-  const [view, setView] = useState('playlists') // 'playlists' | 'tracks'
+  const [view, setView] = useState('playlists') // 'playlists' | 'tracks' | 'paste'
   const [tokenError, setTokenError] = useState(false)
+  const [pasteLink, setPasteLink] = useState('')
+  const [pasteLoading, setPasteLoading] = useState(false)
 
   useEffect(() => {
     if (cachedPlaylists) return // already have data — don't refetch
@@ -184,6 +186,41 @@ function PlaylistPanel({ onAddToQueue, canAdd, ytAccessToken, onStartPlaylist, o
     }
   }
 
+  function extractPlaylistId(url) {
+    try {
+      // Support full URLs and bare IDs
+      const u = url.includes('://') ? new URL(url) : new URL('https://music.youtube.com/playlist?list=' + url)
+      return u.searchParams.get('list') || null
+    } catch {
+      // Bare playlist ID like PLxxxxx
+      const bare = url.trim()
+      if (/^PL[A-Za-z0-9_-]{10,}$/i.test(bare) || /^RDCLAK[A-Za-z0-9_-]+$/i.test(bare) || /^OL[A-Za-z0-9_-]+$/i.test(bare)) return bare
+      return null
+    }
+  }
+
+  async function loadFromPastedLink() {
+    const id = extractPlaylistId(pasteLink.trim())
+    if (!id) { toast.error('Invalid playlist URL'); return }
+    if (!canAdd) { toast('Ask host to allow adding songs'); return }
+    setPasteLoading(true)
+    try {
+      const headers = ytAccessToken ? { Authorization: `Bearer ${ytAccessToken}` } : {}
+      const res = await fetch(`/api/youtube/playlistItems?playlistId=${encodeURIComponent(id)}`, { headers })
+      const data = await res.json()
+      const items = data.results || []
+      if (!items.length) { toast.error('No tracks found in that playlist'); return }
+      const meta = { id, title: 'Pasted Playlist', thumbnail: items[0]?.thumbnail || '' }
+      items.forEach(t => onAddToQueue({ ...t, playlistId: id, playlistName: 'Pasted Playlist', playlistThumb: meta.thumbnail }))
+      toast.success(`Added ${items.length} tracks to queue`)
+      setPasteLink('')
+    } catch {
+      toast.error('Could not load playlist')
+    } finally {
+      setPasteLoading(false)
+    }
+  }
+
   if (loading) return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
       <div style={{ padding: '12px 14px 8px', flexShrink: 0 }}>
@@ -207,15 +244,51 @@ function PlaylistPanel({ onAddToQueue, canAdd, ytAccessToken, onStartPlaylist, o
   )
 
   if (!ytAccessToken || tokenError) return (
-    <div style={{ padding: 24, textAlign: 'center' }}>
-      <div style={{ fontSize: '1.5rem', marginBottom: 8 }}>📋</div>
-      <div style={{ color: 'var(--text-dim)', fontSize: '0.8rem', marginBottom: 12 }}>
-        {tokenError ? 'YouTube session expired' : 'Connect YouTube in Settings to see your playlists'}
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+      {/* Paste-link still available without YT account */}
+      <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+        {view === 'paste' ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button onClick={() => setView('playlists')} style={{ background: 'none', border: 'none', color: 'var(--cyan)', cursor: 'pointer', fontSize: '1rem', padding: 0 }}>←</button>
+              <span style={{ fontFamily: 'Oswald', fontSize: '0.7rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-dim)' }}>Paste Playlist Link</span>
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input
+                value={pasteLink}
+                onChange={e => setPasteLink(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && loadFromPastedLink()}
+                placeholder="youtube.com/playlist?list=... or music.youtube.com/..."
+                style={{ flex: 1, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(0,200,255,0.3)', borderRadius: 8, padding: '8px 10px', color: '#fff', fontSize: '0.75rem', outline: 'none' }}
+              />
+              <button
+                onClick={loadFromPastedLink}
+                disabled={pasteLoading || !pasteLink.trim()}
+                style={{ background: 'rgba(0,200,255,0.15)', border: '1px solid rgba(0,200,255,0.4)', color: 'var(--cyan)', borderRadius: 8, padding: '8px 14px', fontFamily: 'Oswald', fontSize: '0.75rem', letterSpacing: '0.08em', cursor: pasteLoading || !pasteLink.trim() ? 'default' : 'pointer', opacity: pasteLoading || !pasteLink.trim() ? 0.5 : 1, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                {pasteLoading ? '…' : 'ADD ALL'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={() => setView('paste')}
+            style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.25)', color: 'var(--cyan)', borderRadius: 8, padding: '8px 0', fontFamily: 'Oswald', fontSize: '0.72rem', letterSpacing: '0.08em', cursor: 'pointer' }}>
+            🔗 PASTE PLAYLIST LINK
+          </button>
+        )}
       </div>
-      {tokenError
-        ? <button onClick={async () => { setTokenError(false); const t = await onTokenExpired?.(); if (t) fetchPlaylists(t) }} className="btn-primary" style={{ fontSize: '0.8rem', padding: '8px 16px' }}>🔄 Reconnect YouTube</button>
-        : <Link href="/settings" className="btn-ghost" style={{ fontSize: '0.8rem', padding: '8px 16px' }}>Go to Settings →</Link>
-      }
+      {view !== 'paste' && (
+        <div style={{ padding: 24, textAlign: 'center' }}>
+          <div style={{ fontSize: '1.5rem', marginBottom: 8 }}>📋</div>
+          <div style={{ color: 'var(--text-dim)', fontSize: '0.8rem', marginBottom: 12 }}>
+            {tokenError ? 'YouTube session expired' : 'Connect YouTube in Settings to see your playlists'}
+          </div>
+          {tokenError
+            ? <button onClick={async () => { setTokenError(false); const t = await onTokenExpired?.(); if (t) fetchPlaylists(t) }} className="btn-primary" style={{ fontSize: '0.8rem', padding: '8px 16px' }}>🔄 Reconnect YouTube</button>
+            : <Link href="/settings" className="btn-ghost" style={{ fontSize: '0.8rem', padding: '8px 16px' }}>Go to Settings →</Link>
+          }
+        </div>
+      )}
     </div>
   )
 
@@ -259,25 +332,63 @@ function PlaylistPanel({ onAddToQueue, canAdd, ytAccessToken, onStartPlaylist, o
   )
 
   return (
-    <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
-      {playlists.length === 0 ? (
-        <div style={{ padding: 24, textAlign: 'center' }}>
-          <div style={{ fontSize: '1.5rem', marginBottom: 8 }}>📋</div>
-          <div style={{ color: 'var(--text-dim)', fontSize: '0.8rem', marginBottom: 12 }}>No playlists found on your YouTube account</div>
-          <button onClick={() => fetchPlaylists(ytAccessToken)} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-dim)', borderRadius: 8, padding: '6px 14px', cursor: 'pointer', fontSize: '0.75rem' }}>🔄 Retry</button>
-        </div>
-      ) : playlists.map(pl => (
-        <div key={pl.id} onClick={() => loadPlaylistTracks(pl.id, pl.title, pl.thumbnail)} style={{ display: 'flex', gap: 10, padding: '8px 10px', borderRadius: 8, alignItems: 'center', cursor: 'pointer', transition: 'background 0.15s' }}
-          onMouseEnter={e => e.currentTarget.style.background = 'var(--glass-hover)'}
-          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-          {pl.thumbnail && <img src={pl.thumbnail} alt="" style={{ width: 48, height: 36, borderRadius: 4, objectFit: 'cover', flexShrink: 0 }} />}
-          <div style={{ flex: 1, overflow: 'hidden' }}>
-            <div style={{ fontSize: '0.8rem', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pl.title}</div>
-            <div style={{ fontSize: '0.68rem', color: 'var(--text-dim)' }}>{pl.itemCount} tracks</div>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+      {/* Paste-link row */}
+      <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+        {view === 'paste' ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button onClick={() => setView('playlists')} style={{ background: 'none', border: 'none', color: 'var(--cyan)', cursor: 'pointer', fontSize: '1rem', padding: 0 }}>←</button>
+              <span style={{ fontFamily: 'Oswald', fontSize: '0.7rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-dim)' }}>Paste Playlist Link</span>
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input
+                value={pasteLink}
+                onChange={e => setPasteLink(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && loadFromPastedLink()}
+                placeholder="youtube.com/playlist?list=... or music.youtube.com/..."
+                style={{ flex: 1, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(0,200,255,0.3)', borderRadius: 8, padding: '8px 10px', color: '#fff', fontSize: '0.75rem', outline: 'none' }}
+              />
+              <button
+                onClick={loadFromPastedLink}
+                disabled={pasteLoading || !pasteLink.trim()}
+                style={{ background: 'rgba(0,200,255,0.15)', border: '1px solid rgba(0,200,255,0.4)', color: 'var(--cyan)', borderRadius: 8, padding: '8px 14px', fontFamily: 'Oswald', fontSize: '0.75rem', letterSpacing: '0.08em', cursor: pasteLoading || !pasteLink.trim() ? 'default' : 'pointer', opacity: pasteLoading || !pasteLink.trim() ? 0.5 : 1, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                {pasteLoading ? '…' : 'ADD ALL'}
+              </button>
+            </div>
           </div>
-          <span style={{ color: 'var(--text-dim)', fontSize: '0.8rem' }}>›</span>
+        ) : (
+          <button
+            onClick={() => setView('paste')}
+            style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.25)', color: 'var(--cyan)', borderRadius: 8, padding: '8px 0', fontFamily: 'Oswald', fontSize: '0.72rem', letterSpacing: '0.08em', cursor: 'pointer' }}>
+            🔗 PASTE PLAYLIST LINK
+          </button>
+        )}
+      </div>
+
+      {/* Playlists list */}
+      {view !== 'paste' && (
+        <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
+          {playlists.length === 0 ? (
+            <div style={{ padding: 24, textAlign: 'center' }}>
+              <div style={{ fontSize: '1.5rem', marginBottom: 8 }}>📋</div>
+              <div style={{ color: 'var(--text-dim)', fontSize: '0.8rem', marginBottom: 12 }}>No playlists found on your YouTube account</div>
+              <button onClick={() => fetchPlaylists(ytAccessToken)} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-dim)', borderRadius: 8, padding: '6px 14px', cursor: 'pointer', fontSize: '0.75rem' }}>🔄 Retry</button>
+            </div>
+          ) : playlists.map(pl => (
+            <div key={pl.id} onClick={() => loadPlaylistTracks(pl.id, pl.title, pl.thumbnail)} style={{ display: 'flex', gap: 10, padding: '8px 10px', borderRadius: 8, alignItems: 'center', cursor: 'pointer', transition: 'background 0.15s' }}
+              onMouseEnter={e => e.currentTarget.style.background = 'var(--glass-hover)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+              {pl.thumbnail && <img src={pl.thumbnail} alt="" style={{ width: 48, height: 36, borderRadius: 4, objectFit: 'cover', flexShrink: 0 }} />}
+              <div style={{ flex: 1, overflow: 'hidden' }}>
+                <div style={{ fontSize: '0.8rem', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pl.title}</div>
+                <div style={{ fontSize: '0.68rem', color: 'var(--text-dim)' }}>{pl.itemCount} tracks</div>
+              </div>
+              <span style={{ color: 'var(--text-dim)', fontSize: '0.8rem' }}>›</span>
+            </div>
+          ))}
         </div>
-      ))}
+      )}
     </div>
   )
 }
