@@ -218,6 +218,27 @@ export async function skipToNext(roomId) {
   })
 }
 
+// ─── Skip to next using the already-subscribed live queue (no extra Firestore read) ───
+// Use this in automatic skip paths (ENDED, error, watchdog) for zero-latency transitions.
+export async function skipToNextFromQueue(roomId, currentQueue) {
+  if (!currentQueue || currentQueue.length === 0) {
+    await updateDoc(doc(db, 'rooms', roomId), {
+      currentTrack: null,
+      isPlaying: false,
+      currentTime: 0,
+    })
+    return
+  }
+  const [next, ...rest] = currentQueue
+  await updateDoc(doc(db, 'rooms', roomId), {
+    currentTrack: next,
+    queue: rest,
+    currentTime: 0,
+    isPlaying: true,
+    lastActivity: serverTimestamp(),
+  })
+}
+
 // ─── Toggle participant queue access ───
 export async function toggleParticipantQueueAccess(roomId, enabled) {
   await updateDoc(doc(db, 'rooms', roomId), {

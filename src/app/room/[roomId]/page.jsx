@@ -8,7 +8,7 @@ import { useAuth } from '@/context/AuthContext'
 import {
   subscribeToRoom, subscribeToMessages,
   updatePlayback, addToQueue, addManyToQueue, removeFromQueue, reorderQueue,
-  setCurrentTrack, skipToNext, leaveRoom,
+  setCurrentTrack, skipToNext, skipToNextFromQueue, leaveRoom,
   sendMessage, addReaction, toggleParticipantQueueAccess, toggleParticipantFullControl,
   kickParticipant, updateMusicMode, updateWatchPlayback, updateParticipantWatchTime,
 } from '@/lib/rooms'
@@ -1344,7 +1344,9 @@ export default function RoomPage() {
               lastSkipAtRef.current = Date.now()
               const liveIsHost = roomRef.current?.hostId === user?.uid
               if (liveIsHost) {
-                skipToNext(roomId).catch(() => {})
+                const liveQueue = roomRef.current?.queue || []
+                if (liveQueue[0]?.videoId) loadAndPlay(liveQueue[0].videoId, 0)
+                skipToNextFromQueue(roomId, liveQueue).catch(() => {})
               } else {
                 import('firebase/firestore').then(({ updateDoc, doc }) =>
                   import('@/lib/firebase').then(({ db }) =>
@@ -1369,7 +1371,9 @@ export default function RoomPage() {
           lastSkipAtRef.current = Date.now()
           const liveIsHost = roomRef.current?.hostId === user?.uid
           if (liveIsHost) {
-            skipToNext(roomId).catch(() => {})
+            const liveQueue = roomRef.current?.queue || []
+            if (liveQueue[0]?.videoId) loadAndPlay(liveQueue[0].videoId, 0)
+            skipToNextFromQueue(roomId, liveQueue).catch(() => {})
           } else {
             import('firebase/firestore').then(({ updateDoc, doc }) =>
               import('@/lib/firebase').then(({ db }) =>
@@ -1628,7 +1632,9 @@ export default function RoomPage() {
           if (isHost) {
             if (Date.now() - lastSkipAtRef.current < 4000) return
             lastSkipAtRef.current = Date.now()
-            await skipToNext(roomId)
+            const liveQueue = roomRef.current?.queue || []
+            if (liveQueue[0]?.videoId) loadAndPlay(liveQueue[0].videoId, 0)
+            await skipToNextFromQueue(roomId, liveQueue)
           } else {
             // Non-host: don't skip — just retry playing. The host's track may be
             // playing fine; only the guest is slow to buffer.
@@ -1788,7 +1794,9 @@ export default function RoomPage() {
     // write skipRequested. Without this, every non-host ENDED drains an extra song.
     if (Date.now() - lastSkipAtRef.current < 4000) return
     lastSkipAtRef.current = Date.now()
-    skipToNext(roomId)
+    const liveQueue = roomRef.current?.queue || []
+    if (liveQueue[0]?.videoId) loadAndPlay(liveQueue[0].videoId, 0)
+    skipToNextFromQueue(roomId, liveQueue)
   }, [room?.skipRequested])
 
   // Start (or resume) a near-silent oscillator piped into an <audio> element.
@@ -2310,7 +2318,9 @@ export default function RoomPage() {
             if (liveIsHost) {
               if (Date.now() - lastSkipAtRef.current < 4000) return
               lastSkipAtRef.current = Date.now()
-              await skipToNext(roomId)
+              const liveQueue2 = roomRef.current?.queue || []
+              if (liveQueue2[0]?.videoId) loadAndPlay(liveQueue2[0].videoId, 0)
+              await skipToNextFromQueue(roomId, liveQueue2)
             } else {
               // Non-host: retry playing rather than triggering a host skip.
               // The guest may just be slow to buffer; the host's track is likely fine.
@@ -2372,7 +2382,10 @@ export default function RoomPage() {
       } else if (e.data === YT.ENDED) {
         if (Date.now() - lastSkipAtRef.current < 4000) return // watchdog already fired
         lastSkipAtRef.current = Date.now()
-        await skipToNext(roomId)
+        // Immediately start loading next track — no Firestore read round-trip
+        const liveQueue = roomRef.current?.queue || []
+        if (liveQueue[0]?.videoId) loadAndPlay(liveQueue[0].videoId, 0)
+        await skipToNextFromQueue(roomId, liveQueue)
       }
     } else if (!liveIsHost) {
       if (e.data === YT.PAUSED) {
@@ -2403,31 +2416,16 @@ export default function RoomPage() {
     clearTimeout(mobileSkipTimerRef.current)
     const liveIsHost = roomRef.current?.hostId === user?.uid
 
-    // Error 101/150 = embedding blocked (common with "- Topic" auto-generated channels).
-    // If the track came from a user playlist, reload in playlist context — YouTube allows
-    // playlist-owner's videos to play even when standalone embedding is restricted.
-    // Guard: only try once per videoId to prevent an infinite error loop.
-    if (e.data === 101 || e.data === 150) {
-      const failedTrack = roomRef.current?.currentTrack
-      if (
-        failedTrack?.playlistId &&
-        typeof failedTrack?.playlistPosition === 'number' &&
-        playlistTriedRef.current !== failedTrack.videoId
-      ) {
-        playlistTriedRef.current = failedTrack.videoId
-        try {
-          const p = ytPlayerRef.current
-          p?.setLoop?.(false)
-          p?.loadPlaylist?.({ list: failedTrack.playlistId, listType: 'playlist', index: failedTrack.playlistPosition })
-          return
-        } catch {}
-      }
-    }
-
+    // Skip the unplayable video and load the next one immediately.
+    // Note: the previous loadPlaylist workaround for error 101/150 was removed — it
+    // put the player into YouTube's native playlist mode which hijacked our queue
+    // (YT auto-advanced through its own playlist, bypassing our app's queue order).
     if (liveIsHost) {
       if (Date.now() - lastSkipAtRef.current < 4000) return // another skip already in flight
       lastSkipAtRef.current = Date.now()
-      await skipToNext(roomId)
+      const liveQueue = roomRef.current?.queue || []
+      if (liveQueue[0]?.videoId) loadAndPlay(liveQueue[0].videoId, 0)
+      await skipToNextFromQueue(roomId, liveQueue)
     } else {
       // Non-host: signal host to skip the unplayable video
       try {
