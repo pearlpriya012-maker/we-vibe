@@ -2847,7 +2847,13 @@ export default function RoomPage() {
         <header style={{ position: 'relative', zIndex: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', backdropFilter: 'blur(20px)', background: 'rgba(13,13,13,0.95)', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <Link href="/dashboard" style={{ fontFamily: 'Oswald', fontSize: '1.1rem', fontWeight: 700, color: 'var(--green)', textDecoration: 'none', textShadow: '0 0 12px rgba(0,255,136,0.4)' }}>WE🕊️</Link>
-            <div style={{ fontFamily: 'Oswald', fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-dim)' }}>{room.mode === 'music' ? '🎵' : '📺'} {room.name || 'ROOM'}</div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
+              <div className="accent-bar" />
+              <div>
+                <div style={{ fontFamily: 'Oswald', fontSize: '0.48rem', letterSpacing: '0.14em', color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: 2 }}>{room.mode === 'music' ? '🎵 Music Room' : '📺 Watch Room'}</div>
+                <div style={{ fontFamily: 'Oswald', fontSize: '1rem', fontWeight: 700, color: '#fff', letterSpacing: '0.05em', lineHeight: 1 }}>{room.name || room.roomCode}</div>
+              </div>
+            </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {/* LIVE screenshare badge */}
@@ -3040,10 +3046,13 @@ export default function RoomPage() {
         {/* Header */}
         <header style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'rgba(13,13,13,0.97)', borderBottom: '1px solid var(--border)', zIndex: 10 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Link href="/dashboard" style={{ fontFamily: 'Oswald', fontSize: '1.1rem', fontWeight: 700, color: 'var(--cyan)', textDecoration: 'none' }}>WE🕊️</Link>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-              <div style={{ fontFamily: 'Oswald', fontSize: '0.55rem', color: 'var(--text-dim)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>📺 Watch Room</div>
-              {room.name && <div style={{ fontFamily: 'Oswald', fontSize: '0.85rem', fontWeight: 700, color: 'var(--cyan)', textShadow: '0 0 14px rgba(0,200,255,0.6)', letterSpacing: '0.04em', lineHeight: 1 }}>{room.name}</div>}
+            <Link href="/dashboard" style={{ fontFamily: 'Oswald', fontSize: '1.1rem', fontWeight: 700, color: 'var(--green)', textDecoration: 'none', textShadow: '0 0 12px rgba(0,255,136,0.4)' }}>WE🕊️</Link>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
+              <div className="accent-bar" />
+              <div>
+                <div style={{ fontFamily: 'Oswald', fontSize: '0.48rem', letterSpacing: '0.14em', color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: 2 }}>📺 Watch Room</div>
+                <div style={{ fontFamily: 'Oswald', fontSize: '0.9rem', fontWeight: 700, color: '#fff', letterSpacing: '0.05em', lineHeight: 1 }}>{room.name || room.roomCode}</div>
+              </div>
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -3205,10 +3214,13 @@ export default function RoomPage() {
 
         {/* Header */}
         <header style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 12, padding: '8px 18px', background: 'rgba(13,13,13,0.97)', borderBottom: '1px solid var(--border)', zIndex: 10, position: 'relative' }}>
-          <Link href="/dashboard" style={{ fontFamily: 'Oswald', fontSize: '1.15rem', fontWeight: 700, color: 'var(--cyan)', textDecoration: 'none', textShadow: '0 0 12px rgba(0,200,255,0.4)', flexShrink: 0 }}>WE🕊️</Link>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 1, flexShrink: 0 }}>
-            <div style={{ fontFamily: 'Oswald', fontSize: '0.58rem', color: 'var(--text-dim)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>📺 Watch Room</div>
-            {room.name && <div style={{ fontFamily: 'Oswald', fontSize: '0.95rem', fontWeight: 700, color: 'var(--cyan)', textShadow: '0 0 16px rgba(0,200,255,0.6)', letterSpacing: '0.04em', lineHeight: 1 }}>{room.name}</div>}
+          <Link href="/dashboard" style={{ fontFamily: 'Oswald', fontSize: '1.15rem', fontWeight: 700, color: 'var(--green)', textDecoration: 'none', textShadow: '0 0 12px rgba(0,255,136,0.4)', flexShrink: 0 }}>WE🕊️</Link>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'stretch', flexShrink: 0 }}>
+            <div className="accent-bar" />
+            <div>
+              <div style={{ fontFamily: 'Oswald', fontSize: '0.52rem', letterSpacing: '0.14em', color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: 2 }}>📺 Watch Room</div>
+              <div style={{ fontFamily: 'Oswald', fontSize: '1rem', fontWeight: 700, color: '#fff', letterSpacing: '0.04em', lineHeight: 1 }}>{room.name || room.roomCode}</div>
+            </div>
           </div>
           {/* URL bar (host) */}
           {isHost && (
@@ -3366,15 +3378,13 @@ export default function RoomPage() {
       {/* Header */}
       <header style={{ position: 'relative', zIndex: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 20px', backdropFilter: 'blur(20px)', background: 'rgba(13,13,13,0.9)', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <Link href="/dashboard" style={{ fontFamily: 'Oswald', fontSize: '1.2rem', fontWeight: 700, color: 'var(--green)', textDecoration: 'none', textShadow: '0 0 15px rgba(0,200,255,0.5)' }}>WE🕊️</Link>
-          <div style={{ width: 1, height: 20, background: 'var(--border)' }} />
-          <div>
-            <div style={{ fontFamily: 'Oswald', fontSize: '0.6rem', letterSpacing: '0.12em', color: 'var(--text-dim)', textTransform: 'uppercase' }}>{room.mode === 'music' ? '🎵 Music Room' : '📺 Watch Room'}</div>
-            {room.name ? (
-              <div style={{ fontFamily: 'Oswald', fontSize: '1.05rem', fontWeight: 700, color: 'var(--green)', textShadow: '0 0 18px rgba(0,255,136,0.5)', letterSpacing: '0.04em' }}>{room.name}</div>
-            ) : (
-              <div style={{ fontFamily: 'Oswald', fontSize: '1rem', fontWeight: 600, color: '#fff' }}>{room.roomCode}</div>
-            )}
+          <Link href="/dashboard" style={{ fontFamily: 'Oswald', fontSize: '1.2rem', fontWeight: 700, color: 'var(--green)', textDecoration: 'none', textShadow: '0 0 12px rgba(0,255,136,0.4)' }}>WE🕊️</Link>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
+            <div className="accent-bar" />
+            <div>
+              <div style={{ fontFamily: 'Oswald', fontSize: '0.52rem', letterSpacing: '0.14em', color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: 2 }}>{room.mode === 'music' ? '🎵 Music Room' : '📺 Watch Room'}</div>
+              <div style={{ fontFamily: 'Oswald', fontSize: '1.05rem', fontWeight: 700, color: '#fff', letterSpacing: '0.04em', lineHeight: 1 }}>{room.name || room.roomCode}</div>
+            </div>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

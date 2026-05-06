@@ -22,6 +22,26 @@
   --shadow-green-lg: 0 0 40px rgba(0, 255, 136, 0.4);
 }
 
+/* ─── Accent bar (Option I) ─── */
+@keyframes barFlow {
+  0%   { background-position: 0% 0%; }
+  100% { background-position: 0% 100%; }
+}
+@keyframes barGlow {
+  0%,100% { box-shadow: 0 0 4px #00ff88, 0 0 10px rgba(0,255,136,0.55), 0 0 18px rgba(0,255,136,0.25); }
+  33%     { box-shadow: 0 0 6px #00c8ff, 0 0 14px rgba(0,200,255,0.65), 0 0 26px rgba(0,200,255,0.3); }
+  66%     { box-shadow: 0 0 6px #c084fc, 0 0 14px rgba(192,132,252,0.65), 0 0 26px rgba(192,132,252,0.3); }
+}
+.accent-bar {
+  width: 3px;
+  align-self: stretch;
+  border-radius: 2px;
+  background: linear-gradient(to bottom, #00ff88 0%, #00c8ff 25%, #c084fc 50%, #00c8ff 75%, #00ff88 100%);
+  background-size: 100% 200%;
+  animation: barFlow 2s linear infinite, barGlow 2s linear infinite;
+  flex-shrink: 0;
+}
+
 /* ─── Base ─── */
 *,
 *::before,

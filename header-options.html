@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Header Design Options — More</title>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Work+Sans:wght@300;400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0d0d0d;
+    font-family: 'Work Sans', sans-serif;
+    color: #fff;
+    padding: 40px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 52px;
+  }
+  .label {
+    font-family: 'Oswald', sans-serif;
+    font-size: 0.62rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: #555;
+    margin-bottom: 10px;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    background: #111;
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+    border-radius: 10px;
+    width: 100%;
+    max-width: 440px;
+  }
+  .left { display: flex; align-items: center; }
+  .right { display: flex; align-items: center; gap: 6px; }
+  .dg { width:7px;height:7px;border-radius:50%;background:#00ff88;box-shadow:0 0 6px #00ff88;display:inline-block; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+  .live-dot { width:7px;height:7px;border-radius:50%;background:#00ff88;box-shadow:0 0 6px #00ff88;display:inline-block;animation:pulse 1.4s ease-in-out infinite; }
+
+  /* Option I — animated glow bar */
+  @keyframes barFlow {
+    0%   { background-position: 0% 0%; }
+    100% { background-position: 0% 100%; }
+  }
+  @keyframes barGlow {
+    0%,100% { box-shadow: 0 0 4px #00ff88, 0 0 10px rgba(0,255,136,0.55), 0 0 18px rgba(0,255,136,0.25); }
+    33%     { box-shadow: 0 0 6px #00c8ff, 0 0 14px rgba(0,200,255,0.65), 0 0 26px rgba(0,200,255,0.3); }
+    66%     { box-shadow: 0 0 6px #c084fc, 0 0 14px rgba(192,132,252,0.65), 0 0 26px rgba(192,132,252,0.3); }
+  }
+  .accent-bar {
+    width: 3px;
+    min-height: 100%;
+    border-radius: 2px;
+    background: linear-gradient(to bottom,
+      #00ff88 0%,
+      #00c8ff 25%,
+      #c084fc 50%,
+      #00c8ff 75%,
+      #00ff88 100%);
+    background-size: 100% 200%;
+    animation:
+      barFlow 2s linear infinite,
+      barGlow 2s linear infinite;
+    flex-shrink: 0;
+  }
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════ -->
+<div>
+  <div class="label">Option A — Neon underline only on room name</div>
+  <header>
+    <div class="left" style="gap:10px;">
+      <a style="font-family:'Oswald',sans-serif;font-size:1.1rem;font-weight:700;color:#00ff88;text-decoration:none;text-shadow:0 0 12px rgba(0,255,136,0.4);flex-shrink:0;">WE🕊️</a>
+      <div style="width:1px;height:22px;background:rgba(255,255,255,0.08);"></div>
+      <div>
+        <div style="font-family:'Oswald',sans-serif;font-size:0.5rem;letter-spacing:0.14em;color:#444;text-transform:uppercase;">🎵 Music Room</div>
+        <div style="font-family:'Oswald',sans-serif;font-size:1rem;font-weight:700;color:#fff;letter-spacing:0.06em;line-height:1.1;border-bottom:2px solid #00ff88;padding-bottom:2px;display:inline-block;">GT</div>
+      </div>
+    </div>
+    <div class="right"><span class="live-dot"></span><span style="font-family:'Oswald',sans-serif;font-size:0.7rem;color:#00ff88;">3</span></div>
+  </header>
+</div>
+
+<!-- ══════════════════════════════════════════════ -->
+<div>
+  <div class="label">Option B — App name as superscript tag above room</div>
+  <header>
+    <div class="left" style="flex-direction:column;align-items:flex-start;gap:0;">
+      <span style="font-family:'Oswald',sans-serif;font-size:0.48rem;font-weight:600;color:#00ff88;letter-spacing:0.2em;text-transform:uppercase;opacity:0.6;">WE🕊️ · 🎵 Music Room</span>
+      <span style="font-family:'Oswald',sans-serif;font-size:1.4rem;font-weight:700;color:#fff;letter-spacing:0.04em;line-height:1.1;">GT</span>
+    </div>
+    <div class="right"><span class="live-dot"></span><span style="font-family:'Oswald',sans-serif;font-size:0.7rem;color:#00ff88;">3</span></div>
+  </header>
+</div>
+
+<!-- ══════════════════════════════════════════════ -->
+<div>
+  <div class="label">Option C — Outline / ghost text for app, solid for room</div>
+  <header>
+    <div class="left" style="gap:10px;">
+      <a style="font-family:'Oswald',sans-serif;font-size:1.1rem;font-weight:700;letter-spacing:0.1em;text-decoration:none;-webkit-text-stroke:1px rgba(0,255,136,0.4);color:transparent;">WE🕊️</a>
+      <div>
+        <div style="font-family:'Oswald',sans-serif;font-size:0.48rem;letter-spacing:0.14em;color:#444;text-transform:uppercase;margin-bottom:1px;">🎵 Music Room</div>
+        <div style="font-family:'Oswald',sans-serif;font-size:1.05rem;font-weight:700;color:#fff;letter-spacing:0.06em;">GT</div>
+      </div>
+    </div>
+    <div class="right"><span class="live-dot"></span><span style="font-family:'Oswald',sans-serif;font-size:0.7rem;color:#00ff88;">3</span></div>
+  </header>
+</div>
+
+<!-- ══════════════════════════════════════════════ -->
+<div>
+  <div class="label">Option D — Room name in gradient (green → cyan)</div>
+  <header>
+    <div class="left" style="gap:10px;">
+      <a style="font-family:'Oswald',sans-serif;font-size:1.1rem;font-weight:700;color:#00ff88;text-decoration:none;text-shadow:0 0 10px rgba(0,255,136,0.3);">WE🕊️</a>
+      <div style="width:1px;height:22px;background:rgba(255,255,255,0.07);"></div>
+      <div>
+        <div style="font-family:'Oswald',sans-serif;font-size:0.5rem;letter-spacing:0.12em;color:#444;text-transform:uppercase;margin-bottom:2px;">🎵 Music Room</div>
+        <div style="font-family:'Oswald',sans-serif;font-size:1.1rem;font-weight:700;background:linear-gradient(90deg,#00ff88,#00c8ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;letter-spacing:0.06em;">GT</div>
+      </div>
+    </div>
+    <div class="right"><span class="live-dot"></span><span style="font-family:'Oswald',sans-serif;font-size:0.7rem;color:#00ff88;">3</span></div>
+  </header>
+</div>
+
+<!-- ══════════════════════════════════════════════ -->
+<div>
+  <div class="label">Option E — Dot separator, all inline, room name slightly larger</div>
+  <header>
+    <div class="left" style="gap:7px;align-items:baseline;">
+      <a style="font-family:'Oswald',sans-serif;font-size:0.78rem;font-weight:700;color:rgba(0,255,136,0.45);text-decoration:none;letter-spacing:0.1em;">WE🕊️</a>
+      <span style="color:#333;font-size:0.6rem;">•</span>
+      <span style="font-family:'Oswald',sans-serif;font-size:0.55rem;color:#444;letter-spacing:0.1em;text-transform:uppercase;">🎵 Music</span>
+      <span style="color:#333;font-size:0.6rem;">•</span>
+      <span style="font-family:'Oswald',sans-serif;font-size:1.05rem;font-weight:700;color:#fff;letter-spacing:0.06em;">GT</span>
+    </div>
+    <div class="right"><span class="live-dot"></span><span style="font-family:'Oswald',sans-serif;font-size:0.7rem;color:#00ff88;">3</span></div>
+  </header>
+</div>
+
+<!-- ══════════════════════════════════════════════ -->
+<div>
+  <div class="label">Option F — Emoji logo replaces text, room name prominent</div>
+  <header>
+    <div class="left" style="gap:10px;">
+      <span style="font-size:1.6rem;line-height:1;filter:drop-shadow(0 0 8px rgba(0,255,136,0.5));">🕊️</span>
+      <div>
+        <div style="font-family:'Oswald',sans-serif;font-size:0.5rem;letter-spacing:0.14em;color:#444;text-transform:uppercase;">🎵 Music Room</div>
+        <div style="font-family:'Oswald',sans-serif;font-size:1.1rem;font-weight:700;color:#fff;letter-spacing:0.05em;line-height:1.1;">GT</div>
+      </div>
+    </div>
+    <div class="right"><span class="live-dot"></span><span style="font-family:'Oswald',sans-serif;font-size:0.7rem;color:#00ff88;">3</span></div>
+  </header>
+</div>
+
+<!-- ══════════════════════════════════════════════ -->
+<div>
+  <div class="label">Option G — Frosted chip for room name, app name plain</div>
+  <header>
+    <div class="left" style="gap:10px;">
+      <a style="font-family:'Oswald',sans-serif;font-size:1.1rem;font-weight:700;color:#00ff88;text-decoration:none;text-shadow:0 0 10px rgba(0,255,136,0.3);">WE🕊️</a>
+      <div style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);backdrop-filter:blur(6px);border-radius:8px;padding:5px 12px;display:flex;flex-direction:column;gap:1px;">
+        <span style="font-family:'Oswald',sans-serif;font-size:0.48rem;color:#555;letter-spacing:0.12em;text-transform:uppercase;">🎵 Music Room</span>
+        <span style="font-family:'Oswald',sans-serif;font-size:0.95rem;font-weight:700;color:#fff;letter-spacing:0.05em;line-height:1;">GT</span>
+      </div>
+    </div>
+    <div class="right"><span class="live-dot"></span><span style="font-family:'Oswald',sans-serif;font-size:0.7rem;color:#00ff88;">3</span></div>
+  </header>
+</div>
+
+<!-- ══════════════════════════════════════════════ -->
+<div>
+  <div class="label">Option H — Monospace room name (techy / hacker vibe)</div>
+  <header>
+    <div class="left" style="gap:10px;">
+      <a style="font-family:'Oswald',sans-serif;font-size:1.1rem;font-weight:700;color:#00ff88;text-decoration:none;text-shadow:0 0 10px rgba(0,255,136,0.3);">WE🕊️</a>
+      <div style="width:1px;height:22px;background:rgba(255,255,255,0.07);"></div>
+      <div>
+        <div style="font-family:'Oswald',sans-serif;font-size:0.5rem;letter-spacing:0.14em;color:#444;text-transform:uppercase;">🎵 Music Room</div>
+        <div style="font-family:'Space Mono',monospace;font-size:0.95rem;font-weight:700;color:#00ff88;letter-spacing:0.1em;">GT</div>
+      </div>
+    </div>
+    <div class="right"><span class="live-dot"></span><span style="font-family:'Oswald',sans-serif;font-size:0.7rem;color:#00ff88;">3</span></div>
+  </header>
+</div>
+
+<!-- ══════════════════════════════════════════════ -->
+<div>
+  <div class="label">Option I — Left strip accent bar, room name right of it</div>
+  <header>
+    <div class="left" style="gap:12px;">
+      <a style="font-family:'Oswald',sans-serif;font-size:1.1rem;font-weight:700;color:#00ff88;text-decoration:none;text-shadow:0 0 10px rgba(0,255,136,0.3);">WE🕊️</a>
+      <div style="display:flex;gap:8px;align-items:stretch;">
+        <div class="accent-bar"></div>
+        <div>
+          <div style="font-family:'Oswald',sans-serif;font-size:0.48rem;letter-spacing:0.14em;color:#444;text-transform:uppercase;margin-bottom:2px;">🎵 Music Room</div>
+          <div style="font-family:'Oswald',sans-serif;font-size:1.05rem;font-weight:700;color:#fff;letter-spacing:0.05em;line-height:1;">GT</div>
+        </div>
+      </div>
+    </div>
+    <div class="right"><span class="live-dot"></span><span style="font-family:'Oswald',sans-serif;font-size:0.7rem;color:#00ff88;">3</span></div>
+  </header>
+</div>
+
+<!-- ══════════════════════════════════════════════ -->
+<div>
+  <div class="label">Option J — Split colour: MUSIC dim, ROOM NAME bright pink accent</div>
+  <header>
+    <div class="left" style="gap:10px;">
+      <a style="font-family:'Oswald',sans-serif;font-size:1.1rem;font-weight:700;color:#00ff88;text-decoration:none;text-shadow:0 0 10px rgba(0,255,136,0.3);">WE🕊️</a>
+      <div style="width:1px;height:22px;background:rgba(255,255,255,0.07);"></div>
+      <div>
+        <div style="font-family:'Oswald',sans-serif;font-size:0.5rem;letter-spacing:0.12em;color:#444;text-transform:uppercase;margin-bottom:2px;">🎵 Music Room</div>
+        <div style="font-family:'Oswald',sans-serif;font-size:1.05rem;font-weight:700;color:#ff4d8f;text-shadow:0 0 16px rgba(255,77,143,0.6);letter-spacing:0.06em;">GT</div>
+      </div>
+    </div>
+    <div class="right"><span class="live-dot"></span><span style="font-family:'Oswald',sans-serif;font-size:0.7rem;color:#00ff88;">3</span></div>
+  </header>
+</div>
+
+</body>
+</html>
