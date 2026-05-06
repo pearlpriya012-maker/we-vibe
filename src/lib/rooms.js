@@ -41,13 +41,15 @@ async function roomCodeExists(code) {
 }
 
 // ─── Create a new room ───
-export async function createRoom({ hostId, hostName, hostPhoto, mode, watchUrl }) {
+export async function createRoom({ hostId, hostName, hostPhoto, mode, watchUrl, permanent = false, name = '' }) {
   const roomCode = await generateRoomCode()
   const roomRef = doc(collection(db, 'rooms'))
   const roomData = {
     id: roomRef.id,
     roomCode,
+    name: name.trim(),
     hostId,
+    permanent,
     ...(watchUrl ? { watchUrl, watchIsPlaying: false, watchCurrentTime: 0, watchUpdatedAt: null } : {}),
     participants: [
       {
@@ -74,6 +76,24 @@ export async function createRoom({ hostId, hostName, hostPhoto, mode, watchUrl }
   return { id: roomRef.id, roomCode }
 }
 
+// ─── Create a permanent room and save its ID to the user's profile ───
+export async function createPermanentRoom({ hostId, hostName, hostPhoto, name = '' }) {
+  const result = await createRoom({ hostId, hostName, hostPhoto, mode: 'music', permanent: true, name })
+  await updateDoc(doc(db, 'users', hostId), { permanentRoomId: result.id, permanentRoomCode: result.roomCode })
+  return result
+}
+
+// ─── Get the user's permanent room (returns room data or null) ───
+export async function getUserPermanentRoom(uid) {
+  const userSnap = await getDoc(doc(db, 'users', uid))
+  if (!userSnap.exists()) return null
+  const { permanentRoomId } = userSnap.data()
+  if (!permanentRoomId) return null
+  const roomSnap = await getDoc(doc(db, 'rooms', permanentRoomId))
+  if (!roomSnap.exists()) return null
+  return roomSnap.data()
+}
+
 // ─── Update watch URL room playback state ───
 export async function updateWatchPlayback(roomId, data) {
   const { updateDoc, doc: firestoreDoc } = await import('firebase/firestore')
@@ -97,23 +117,40 @@ export async function joinRoomByCode({ code, uid, displayName, photoURL }) {
   const roomDoc = snap.docs[0]
   const room = roomDoc.data()
 
-  // Check if already a participant
-  const alreadyIn = room.participants.some((p) => p.uid === uid)
-  if (!alreadyIn) {
-    if (room.participants.length >= 50)
+  if (room.permanent) {
+    // For permanent rooms: sweep out ghost participants (joined > 8 h ago, clearly offline)
+    // to keep the participants array lean and prevent accumulation over time.
+    const EIGHT_HOURS = 8 * 3600 * 1000
+    const fresh = room.participants.filter(
+      (p) => p.uid === uid || Date.now() - p.joinedAt < EIGHT_HOURS
+    )
+    const alreadyIn = fresh.some((p) => p.uid === uid)
+    if (!alreadyIn && fresh.length >= 50)
       throw new Error('This room is full (50/50 participants).')
-    await updateDoc(roomDoc.ref, {
-      participants: arrayUnion({
-        uid,
-        displayName,
-        photoURL: photoURL || '',
-        canAddToQueue: true,
-        joinedAt: Date.now(),
-      }),
-      lastActivity: serverTimestamp(),
-    })
+    const newParticipants = alreadyIn
+      ? fresh
+      : [...fresh, { uid, displayName, photoURL: photoURL || '', canAddToQueue: true, joinedAt: Date.now() }]
+    await updateDoc(roomDoc.ref, { participants: newParticipants, lastActivity: serverTimestamp() })
+  } else {
+    // Regular room — simple arrayUnion, no ghost cleanup needed
+    const alreadyIn = room.participants.some((p) => p.uid === uid)
+    if (!alreadyIn) {
+      if (room.participants.length >= 50)
+        throw new Error('This room is full (50/50 participants).')
+      await updateDoc(roomDoc.ref, {
+        participants: arrayUnion({
+          uid,
+          displayName,
+          photoURL: photoURL || '',
+          canAddToQueue: true,
+          joinedAt: Date.now(),
+        }),
+        lastActivity: serverTimestamp(),
+      })
+    }
   }
-  return roomDoc.id
+
+  return { id: roomDoc.id, name: room.name || '', roomCode: room.roomCode }
 }
 
 // ─── Get room once ───
@@ -273,6 +310,14 @@ export async function leaveRoom(roomId, uid) {
   const remaining = room.participants.filter((p) => p.uid !== uid)
 
   if (remaining.length === 0) {
+    if (room.permanent) {
+      // Permanent rooms are never deleted — just clear participants
+      await updateDoc(doc(db, 'rooms', roomId), {
+        participants: [],
+        lastActivity: serverTimestamp(),
+      })
+      return
+    }
     // Delete room if empty
     await deleteDoc(doc(db, 'rooms', roomId))
     return
@@ -283,8 +328,8 @@ export async function leaveRoom(roomId, uid) {
     lastActivity: serverTimestamp(),
   }
 
-  // Transfer host if needed
-  if (room.hostId === uid) {
+  // Transfer host if needed (skip for permanent rooms — original host keeps ownership)
+  if (room.hostId === uid && !room.permanent) {
     const sorted = [...remaining].sort((a, b) => a.joinedAt - b.joinedAt)
     updates.hostId = sorted[0].uid
   }

@@ -16,8 +16,10 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow create: if request.auth != null;
       allow update: if request.auth != null;
+      // Permanent rooms can NEVER be deleted; regular rooms only by the host
       allow delete: if request.auth != null &&
-        request.auth.uid == resource.data.hostId;
+        request.auth.uid == resource.data.hostId &&
+        resource.data.permanent != true;
 
       // UNO game — any authenticated participant can read/write
       match /uno/{doc} {

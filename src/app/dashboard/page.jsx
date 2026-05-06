@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
 import { useAuth } from '@/context/AuthContext'
-import { createRoom, joinRoomByCode } from '@/lib/rooms'
+import { createRoom, joinRoomByCode, createPermanentRoom, getUserPermanentRoom } from '@/lib/rooms'
+import { saveRecentRoom, getRecentRooms } from '@/lib/recentRooms'
 import { createScreenSession, sendSignal, listenSignals, endScreenSession } from '@/lib/screenshare'
 
 const ICE_CONFIG = {
@@ -39,6 +40,11 @@ export default function DashboardPage() {
   const [joining, setJoining] = useState(false)
   const [watchUrl, setWatchUrl] = useState('')
   const [watchUrlError, setWatchUrlError] = useState('')
+  const [permanentRoom, setPermanentRoom] = useState(undefined) // undefined=loading, null=none
+  const [creatingPermanent, setCreatingPermanent] = useState(false)
+  const [roomName, setRoomName] = useState('')             // name for new create-tab rooms
+  const [permanentRoomName, setPermanentRoomName] = useState('') // name for permanent room
+  const [recentRooms, setRecentRooms] = useState([])       // hydrated from localStorage below
 
   // Screen share state
   const [screenStatus, setScreenStatus] = useState('idle') // idle | sharing
@@ -80,17 +86,55 @@ export default function DashboardPage() {
     if (!user) router.replace('/')
   }, [user, router])
 
+  // Load recent rooms from localStorage (client-only, zero DB cost)
+  useEffect(() => { setRecentRooms(getRecentRooms()) }, [])
+
+  // Load permanent room whenever the My Room tab is opened
+  useEffect(() => {
+    if (tab !== 'myroom' || !user) return
+    setPermanentRoom(undefined)
+    getUserPermanentRoom(user.uid)
+      .then(r => setPermanentRoom(r || null))
+      .catch(() => setPermanentRoom(null))
+  }, [tab, user])
+
+  async function handleCreatePermanentRoom() {
+    setCreatingPermanent(true)
+    try {
+      await createPermanentRoom({
+        hostId: user.uid,
+        hostName: user.displayName,
+        hostPhoto: user.photoURL,
+        name: permanentRoomName.trim(),
+      })
+      toast.success('Your permanent room is ready! 🏠')
+      const room = await getUserPermanentRoom(user.uid)
+      setPermanentRoom(room)
+      if (room) {
+        saveRecentRoom(room.id, room.roomCode, room.name || permanentRoomName.trim())
+        setRecentRooms(getRecentRooms())
+      }
+    } catch (err) {
+      toast.error(err.message || 'Could not create room')
+    } finally {
+      setCreatingPermanent(false)
+    }
+  }
+
   if (!user) return null
 
   async function handleCreate() {
     setCreating(true)
     try {
-      const { id } = await createRoom({
+      const { id, roomCode } = await createRoom({
         hostId: user.uid,
         hostName: user.displayName,
         hostPhoto: user.photoURL,
         mode,
+        name: roomName.trim(),
       })
+      saveRecentRoom(id, roomCode, roomName.trim())
+      setRecentRooms(getRecentRooms())
       toast.success('Room created! 🎉')
       router.push(`/room/${id}`)
     } catch (err) {
@@ -105,12 +149,14 @@ export default function DashboardPage() {
     if (joinCode.length !== 6) return toast.error('Room code must be 6 characters')
     setJoining(true)
     try {
-      const roomId = await joinRoomByCode({
+      const { id: roomId, name: joinedName, roomCode: joinedCode } = await joinRoomByCode({
         code: joinCode.toUpperCase(),
         uid: user.uid,
         displayName: user.displayName,
         photoURL: user.photoURL,
       })
+      saveRecentRoom(roomId, joinedCode, joinedName)
+      setRecentRooms(getRecentRooms())
       toast.success('Joined the room! 🎵')
       router.push(`/room/${roomId}`)
     } catch (err) {
@@ -326,13 +372,14 @@ export default function DashboardPage() {
         </div>
 
         <div className="glass-card" style={{ width: '100%', maxWidth: 520 }}>
-          {/* Tabs — CSS grid so all 4 always fit equally, no scrolling needed */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', borderBottom: '1px solid var(--border)' }}>
+          {/* Tabs — CSS grid so all 5 always fit equally, no scrolling needed */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', borderBottom: '1px solid var(--border)' }}>
             {[
-              { key: 'create', label: '🎵 Create' },
-              { key: 'watch',  label: '📺 Watch' },
-              { key: 'screen', label: '🖥️ Screen' },
-              { key: 'join',   label: '🔗 Join' },
+              { key: 'create',  label: '🎵 Create' },
+              { key: 'watch',   label: '📺 Watch' },
+              { key: 'screen',  label: '🖥️ Screen' },
+              { key: 'join',    label: '🔗 Join' },
+              { key: 'myroom',  label: '🏠 My Room' },
             ].map(({ key, label }) => (
               <button
                 key={key}
@@ -363,6 +410,19 @@ export default function DashboardPage() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
                 <div style={{ background: 'rgba(0,255,136,0.04)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 20px', fontSize: '0.875rem', color: 'var(--text-dim)' }}>
                   <span style={{ color: 'var(--green)', fontWeight: 600 }}>You'll be the host.</span> Control playback, manage the queue, and invite friends with a 6-digit code.
+                </div>
+
+                <div>
+                  <div style={{ fontFamily: 'Oswald', fontSize: '0.75rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-dim)', marginBottom: 10 }}>Room Name <span style={{ opacity: 0.5 }}>(optional)</span></div>
+                  <input
+                    type="text"
+                    maxLength={40}
+                    placeholder="e.g. Friday Night Vibes…"
+                    className="input-vibe"
+                    value={roomName}
+                    onChange={e => setRoomName(e.target.value)}
+                    style={{ fontSize: '0.9rem' }}
+                  />
                 </div>
 
                 <button onClick={handleCreate} disabled={creating} className="btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '15px' }}>
@@ -489,9 +549,88 @@ export default function DashboardPage() {
                   {joining ? <><span className="spinner" /> Joining…</> : 'Join Room 🎵'}
                 </button>
               </form>
+            ) : (
+              /* ── My Room tab ── */
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                {permanentRoom === undefined ? (
+                  <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text-dim)', fontSize: '0.85rem' }}>Loading…</div>
+                ) : permanentRoom === null ? (
+                  <>
+                    <div style={{ background: 'rgba(0,255,136,0.04)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 20px', fontSize: '0.875rem', color: 'var(--text-dim)' }}>
+                      <span style={{ color: 'var(--green)', fontWeight: 600 }}>One room, forever.</span> Create your permanent room once — it never disappears. Share the code with anyone, anytime.
+                    </div>
+                    <div>
+                      <div style={{ fontFamily: 'Oswald', fontSize: '0.75rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-dim)', marginBottom: 10 }}>Room Name <span style={{ opacity: 0.5 }}>(optional)</span></div>
+                      <input
+                        type="text"
+                        maxLength={40}
+                        placeholder="e.g. SPY's Vibe Den…"
+                        className="input-vibe"
+                        value={permanentRoomName}
+                        onChange={e => setPermanentRoomName(e.target.value)}
+                        style={{ fontSize: '0.9rem' }}
+                      />
+                    </div>
+                    <button onClick={handleCreatePermanentRoom} disabled={creatingPermanent} className="btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '15px' }}>
+                      {creatingPermanent ? <><span className="spinner" /> Creating…</> : 'Create My Permanent Room 🏠'}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ textAlign: 'center' }}>
+                      {permanentRoom.name ? (
+                        <div style={{ fontFamily: 'Oswald', fontSize: '1.1rem', fontWeight: 600, letterSpacing: '0.06em', color: '#fff', marginBottom: 6 }}>{permanentRoom.name}</div>
+                      ) : null}
+                      <div style={{ fontFamily: 'Oswald', fontSize: '0.7rem', letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--text-dim)', marginBottom: 8 }}>Your Room Code</div>
+                      <div style={{ fontFamily: 'Oswald', fontSize: '3rem', fontWeight: 700, letterSpacing: '0.4em', color: 'var(--green)', textShadow: '0 0 30px rgba(0,255,136,0.4)' }}>{permanentRoom.roomCode}</div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', marginTop: 6 }}>
+                        {permanentRoom.participants?.length ?? 0} participant{permanentRoom.participants?.length !== 1 ? 's' : ''} currently inside
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 10 }}>
+                      <button
+                        onClick={() => router.push(`/room/${permanentRoom.id}`)}
+                        className="btn-primary"
+                        style={{ flex: 1, justifyContent: 'center', padding: '14px' }}
+                      >Enter Room 🚀</button>
+                      <button
+                        onClick={() => {
+                          const link = `${window.location.origin}/join/${permanentRoom.roomCode}`
+                          navigator.clipboard.writeText(link).then(() => toast.success('Invite link copied!'))
+                        }}
+                        style={{ flex: 1, background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', color: '#fff', borderRadius: 8, padding: '14px', fontSize: '0.8rem', cursor: 'pointer', fontFamily: 'Oswald', letterSpacing: '0.06em' }}
+                      >📋 Copy Invite Link</button>
+                    </div>
+                    <div style={{ textAlign: 'center', fontSize: '0.72rem', color: 'var(--text-dim)', padding: '4px 0', wordBreak: 'break-all' }}>
+                      {typeof window !== 'undefined' ? `${window.location.origin}/join/${permanentRoom.roomCode}` : `/join/${permanentRoom.roomCode}`}
+                    </div>
+                  </>
+                )}
+              </div>
             )}
           </div>
         </div>
+
+        {/* Recent rooms — 100% localStorage, zero database cost */}
+        {recentRooms.length > 0 && (
+          <div style={{ marginTop: 28, width: '100%', maxWidth: 520 }}>
+            <div style={{ fontFamily: 'Oswald', fontSize: '0.65rem', letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--text-dim)', marginBottom: 12 }}>Recent Rooms</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {recentRooms.map((r) => (
+                <button
+                  key={r.id}
+                  onClick={() => router.push(`/room/${r.id}`)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 14px', color: '#fff', cursor: 'pointer', transition: 'border-color 0.2s' }}
+                  onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--green)'}
+                  onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}
+                >
+                  <span style={{ fontFamily: 'Oswald', fontSize: '0.65rem', letterSpacing: '0.15em', color: 'var(--text-dim)' }}>{r.code}</span>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 500 }}>{r.name || 'Room'}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <p style={{ marginTop: 40, color: 'var(--text-dim)', fontSize: '0.8rem', fontStyle: 'italic' }}>
           🕊️ Vibe and Play, darling! Made with ❤️ by Team SPY
