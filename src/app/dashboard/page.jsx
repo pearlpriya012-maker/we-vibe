@@ -361,17 +361,217 @@ export default function DashboardPage() {
       </nav>
 
       {/* Main */}
-      <main style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 'calc(100vh - 73px)', padding: '60px 24px' }}>
+      <main style={{ position: 'relative', zIndex: 1, maxWidth: 1100, margin: '0 auto', padding: '48px 24px 80px' }}>
 
-        <div style={{ textAlign: 'center', marginBottom: 48 }}>
+        {/* ── Page heading ── */}
+        <div style={{ marginBottom: 36 }}>
           <span className="section-label">Dashboard</span>
-          <h1 style={{ fontFamily: 'Oswald', fontSize: 'clamp(2.5rem, 6vw, 4rem)', fontWeight: 700, textTransform: 'uppercase', lineHeight: 1 }}>
+          <h1 style={{ fontFamily: 'Oswald', fontSize: 'clamp(2rem, 5vw, 3rem)', fontWeight: 700, textTransform: 'uppercase', lineHeight: 1, marginTop: 4 }}>
             Let's <span style={{ color: 'var(--green)', textShadow: '0 0 30px rgba(0,255,136,0.4)' }}>Vibe</span>
           </h1>
-          <p style={{ color: 'var(--text-dim)', marginTop: 12, fontSize: '1rem', fontWeight: 300 }}>Create a new room or join one with a code</p>
         </div>
 
-        <div className="glass-card" style={{ width: '100%', maxWidth: 520 }}>
+        {/* ── My Room banner (shown only when user has a permanent room) ── */}
+        {permanentRoom !== undefined && permanentRoom !== null && (
+          <div style={{ marginBottom: 28, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 14, background: 'rgba(0,255,136,0.06)', border: '1px solid rgba(0,255,136,0.25)', borderRadius: 14, padding: '18px 24px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              <div>
+                <div style={{ fontFamily: 'Oswald', fontSize: '0.6rem', letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--text-dim)', marginBottom: 3 }}>🏠 My Permanent Room</div>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+                  {permanentRoom.name && <span style={{ fontFamily: 'Oswald', fontSize: '1.1rem', fontWeight: 600, color: '#fff' }}>{permanentRoom.name}</span>}
+                  <span style={{ fontFamily: 'Oswald', fontSize: '1.6rem', fontWeight: 700, letterSpacing: '0.3em', color: 'var(--green)' }}>{permanentRoom.roomCode}</span>
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', marginTop: 2 }}>
+                  {permanentRoom.participants?.length ?? 0} participant{permanentRoom.participants?.length !== 1 ? 's' : ''} inside
+                </div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <button onClick={() => router.push(`/room/${permanentRoom.id}`)} className="btn-primary" style={{ padding: '10px 20px', fontSize: '0.82rem' }}>Enter Room 🚀</button>
+              <button
+                onClick={() => navigator.clipboard.writeText(`${window.location.origin}/join/${permanentRoom.roomCode}`).then(() => toast.success('Invite link copied!'))}
+                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', color: '#fff', borderRadius: 8, padding: '10px 18px', fontSize: '0.82rem', cursor: 'pointer', fontFamily: 'Oswald', letterSpacing: '0.06em' }}>
+                📋 Share
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Two-column main cards ── */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20, marginBottom: 20 }}>
+
+          {/* ── START A ROOM ── */}
+          <div className="glass-card" style={{ padding: '28px 28px 32px' }}>
+            <div style={{ fontFamily: 'Oswald', fontSize: '0.75rem', letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--text-dim)', marginBottom: 18 }}>Start a Room</div>
+
+            {/* Mode radio */}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+              {[{ k: 'music', label: '🎵 Music', color: 'var(--green)' }, { k: 'watch', label: '📺 Watch', color: 'var(--cyan)' }].map(({ k, label, color }) => (
+                <button key={k} onClick={() => setTab(k)}
+                  style={{ flex: 1, padding: '10px 8px', borderRadius: 8, border: `1px solid ${tab === k ? color : 'var(--border)'}`, background: tab === k ? `rgba(${k === 'music' ? '0,255,136' : '0,200,255'},0.08)` : 'transparent', color: tab === k ? color : 'var(--text-dim)', fontFamily: 'Oswald', fontSize: '0.78rem', letterSpacing: '0.08em', textTransform: 'uppercase', cursor: 'pointer', transition: 'all 0.2s' }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {/* Room Name */}
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontFamily: 'Oswald', fontSize: '0.68rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-dim)', marginBottom: 8 }}>Room Name <span style={{ opacity: 0.45 }}>(optional)</span></div>
+              <input type="text" maxLength={40} placeholder="e.g. Friday Night Vibes…" className="input-vibe"
+                value={roomName} onChange={e => setRoomName(e.target.value)} style={{ fontSize: '0.88rem', padding: '11px 14px' }} />
+            </div>
+
+            {/* Watch URL (only when Watch mode) */}
+            {tab === 'watch' && (
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontFamily: 'Oswald', fontSize: '0.68rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-dim)', marginBottom: 8 }}>Video URL</div>
+                <input type="text" placeholder="https://youtube.com/watch?v=…" className="input-vibe"
+                  value={watchUrl} onChange={e => { setWatchUrl(e.target.value); setWatchUrlError('') }}
+                  style={{ fontSize: '0.85rem', padding: '11px 14px' }} />
+                {watchUrlError && <p style={{ color: 'var(--pink)', fontSize: '0.75rem', marginTop: 6 }}>{watchUrlError}</p>}
+                <p style={{ color: 'var(--text-dim)', fontSize: '0.73rem', marginTop: 6 }}>YouTube, youtu.be, Shorts, Vimeo, Dailymotion, or any https:// URL</p>
+              </div>
+            )}
+
+            <button
+              onClick={tab === 'watch' ? (e => handleWatchUrl({ preventDefault: () => {}, ...e })) : handleCreate}
+              disabled={creating || (tab === 'watch' && !watchUrl.trim())}
+              className="btn-primary"
+              style={{ width: '100%', justifyContent: 'center', padding: '14px', marginTop: 4, background: tab === 'watch' ? 'var(--cyan)' : undefined, boxShadow: tab === 'watch' ? '0 0 20px rgba(0,200,255,0.25)' : undefined }}>
+              {creating ? <><span className="spinner" /> Creating…</> : tab === 'watch' ? 'Create Watch Room 📺' : 'Create Room 🚀'}
+            </button>
+
+            {/* My Room creation (shown only when user has no permanent room yet) */}
+            {permanentRoom === null && (
+              <div style={{ marginTop: 20, borderTop: '1px solid var(--border)', paddingTop: 20 }}>
+                <div style={{ fontFamily: 'Oswald', fontSize: '0.68rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-dim)', marginBottom: 8 }}>🏠 Permanent Room</div>
+                <input type="text" maxLength={40} placeholder="Name your permanent room…" className="input-vibe"
+                  value={permanentRoomName} onChange={e => setPermanentRoomName(e.target.value)}
+                  style={{ fontSize: '0.85rem', padding: '10px 14px', marginBottom: 10 }} />
+                <button onClick={handleCreatePermanentRoom} disabled={creatingPermanent}
+                  style={{ width: '100%', background: 'rgba(0,255,136,0.08)', border: '1px solid rgba(0,255,136,0.3)', color: 'var(--green)', borderRadius: 8, padding: '11px', fontSize: '0.8rem', cursor: creatingPermanent ? 'not-allowed' : 'pointer', fontFamily: 'Oswald', letterSpacing: '0.08em', opacity: creatingPermanent ? 0.6 : 1 }}>
+                  {creatingPermanent ? <><span className="spinner" /> Creating…</> : 'Create Permanent Room 🏠'}
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* ── JOIN A ROOM ── */}
+          <div className="glass-card" style={{ padding: '28px 28px 32px' }}>
+            <div style={{ fontFamily: 'Oswald', fontSize: '0.75rem', letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--text-dim)', marginBottom: 18 }}>Join a Room</div>
+
+            <form onSubmit={handleJoin} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div>
+                <div style={{ fontFamily: 'Oswald', fontSize: '0.68rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-dim)', marginBottom: 8 }}>Room Code</div>
+                <input type="text" maxLength={6} placeholder="A1B2C3" className="input-vibe"
+                  value={joinCode} onChange={(e) => setJoinCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+                  style={{ textAlign: 'center', fontFamily: 'Oswald', fontSize: '2rem', fontWeight: 700, letterSpacing: '0.4em', padding: '18px 12px', color: joinCode ? 'var(--green)' : undefined }} />
+                <p style={{ color: 'var(--text-dim)', fontSize: '0.75rem', marginTop: 8, textAlign: 'center' }}>Ask the host for their 6-character code</p>
+              </div>
+              <button type="submit" disabled={joining || joinCode.length !== 6} className="btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '14px' }}>
+                {joining ? <><span className="spinner" /> Joining…</> : 'Join Room 🎵'}
+              </button>
+            </form>
+
+            {/* Recent rooms */}
+            {recentRooms.length > 0 && (
+              <div style={{ marginTop: 24, borderTop: '1px solid var(--border)', paddingTop: 20 }}>
+                <div style={{ fontFamily: 'Oswald', fontSize: '0.65rem', letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--text-dim)', marginBottom: 12 }}>Recent Rooms</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {recentRooms.map((r) => (
+                    <button key={r.id} onClick={() => router.push(`/room/${r.id}`)}
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', color: '#fff', cursor: 'pointer', transition: 'border-color 0.2s', textAlign: 'left' }}
+                      onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--green)'}
+                      onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 500 }}>{r.name || 'Unnamed Room'}</span>
+                      <span style={{ fontFamily: 'Oswald', fontSize: '0.65rem', letterSpacing: '0.15em', color: 'var(--text-dim)' }}>{r.code}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── Screen Share accordion ── */}
+        <div style={{ border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
+          <button onClick={() => setTab(tab === 'screen' ? '' : 'screen')}
+            style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 24px', background: 'rgba(255,255,255,0.02)', border: 'none', color: '#fff', cursor: 'pointer', fontFamily: 'Oswald', fontSize: '0.8rem', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+            <span>🖥️ Screen Share</span>
+            <span style={{ color: 'var(--text-dim)', fontSize: '0.75rem', transition: 'transform 0.2s', display: 'inline-block', transform: tab === 'screen' ? 'rotate(180deg)' : 'none' }}>▼</span>
+          </button>
+
+          {tab === 'screen' && (
+            <div style={{ padding: '0 24px 24px', borderTop: '1px solid var(--border)' }}>
+              <div style={{ paddingTop: 20 }}>
+                {screenStatus === 'idle' ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                      {[{ mode: 'tab', icon: '🗂️', label: 'Browser Tab' }, { mode: 'window', icon: '🪟', label: 'Window' }, { mode: 'screen', icon: '🖥️', label: 'Full Screen' }].map(({ mode, icon, label }) => (
+                        <button key={mode} onClick={() => startSharing(mode)}
+                          style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, padding: '14px 8px', background: 'rgba(124,58,237,0.1)', border: '1px solid rgba(124,58,237,0.3)', borderRadius: 10, color: '#a78bfa', fontSize: '0.72rem', fontFamily: 'Oswald', letterSpacing: '0.06em', cursor: 'pointer', textTransform: 'uppercase' }}>
+                          <span style={{ fontSize: '1.6rem' }}>{icon}</span>{label}
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+                      <div style={{ fontFamily: 'Oswald', fontSize: '0.7rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-dim)', marginBottom: 10 }}>Watch Someone's Screen</div>
+                      <form onSubmit={handleWatchScreenCode} style={{ display: 'flex', gap: 8 }}>
+                        <input type="text" maxLength={6} placeholder="Share code…" className="input-vibe"
+                          value={watchScreenCode} onChange={e => setWatchScreenCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+                          style={{ flex: 1, textAlign: 'center', fontFamily: 'Oswald', fontSize: '1.1rem', letterSpacing: '0.3em', padding: '11px 8px' }} />
+                        <button type="submit" disabled={watchScreenCode.length < 4} className="btn-primary" style={{ padding: '11px 18px', flexShrink: 0 }}>👁️ Watch</button>
+                      </form>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                    <div style={{ position: 'relative', borderRadius: 8, overflow: 'hidden', background: '#000' }}>
+                      <video ref={screenVideoRef} autoPlay muted playsInline style={{ width: '100%', maxHeight: 200, objectFit: 'contain', display: 'block' }} />
+                      {Object.entries(viewerCursors).map(([id, cur]) => (
+                        <div key={id} style={{ position: 'absolute', left: `${cur.x * 100}%`, top: `${cur.y * 100}%`, transform: 'translate(-50%,-50%)', pointerEvents: 'none', zIndex: 5 }}>
+                          <div style={{ width: 10, height: 10, borderRadius: '50%', background: 'rgba(255,120,120,0.9)', border: '2px solid #fff', boxShadow: '0 0 6px rgba(255,120,120,0.6)' }} />
+                          <div style={{ fontSize: '0.5rem', color: '#fff', background: 'rgba(0,0,0,0.75)', borderRadius: 3, padding: '1px 4px', marginTop: 2, whiteSpace: 'nowrap' }}>{cur.name}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                      <div>
+                        <div style={{ fontFamily: 'Oswald', fontSize: '0.6rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-dim)', marginBottom: 4 }}>Share Code</div>
+                        <div style={{ fontFamily: 'Oswald', fontSize: '2rem', fontWeight: 700, letterSpacing: '0.3em', color: '#a78bfa' }}>{screenCode}</div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', marginTop: 2 }}>{viewerCount} viewer{viewerCount !== 1 ? 's' : ''} connected</div>
+                      </div>
+                      <button onClick={() => navigator.clipboard.writeText(`${window.location.origin}/screenshare/${screenCode}`).then(() => toast.success('Link copied!'))}
+                        style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid var(--border)', color: '#fff', borderRadius: 8, padding: '10px 16px', fontSize: '0.78rem', cursor: 'pointer' }}>📋 Copy Link</button>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 8 }}>
+                      <div>
+                        <div style={{ fontSize: '0.8rem', fontWeight: 500 }}>🖱️ Allow Interaction</div>
+                        <div style={{ fontSize: '0.65rem', color: 'var(--text-dim)', marginTop: 2 }}>Viewers can click, scroll & type on your shared tab</div>
+                      </div>
+                      <button onClick={() => { allowInteractionRef.current = !allowInteractionRef.current; setAllowInteraction(a => !a) }}
+                        style={{ width: 40, height: 22, borderRadius: 11, border: 'none', cursor: 'pointer', transition: 'background 0.2s', background: allowInteraction ? 'var(--green)' : 'rgba(255,255,255,0.15)', position: 'relative', flexShrink: 0 }}>
+                        <div style={{ position: 'absolute', top: 2, left: allowInteraction ? 20 : 2, width: 18, height: 18, borderRadius: '50%', background: '#fff', transition: 'left 0.2s' }} />
+                      </button>
+                    </div>
+                    <button onClick={stopSharing} style={{ width: '100%', background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171', borderRadius: 8, padding: '12px', fontSize: '0.82rem', cursor: 'pointer', fontFamily: 'Oswald', letterSpacing: '0.08em' }}>
+                      ■ Stop Sharing
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <p style={{ marginTop: 40, color: 'var(--text-dim)', fontSize: '0.8rem', fontStyle: 'italic', textAlign: 'center' }}>
+          🕊️ Vibe and Play, darling! Made with ❤️ by Team SPY
+        </p>
+      </main>
+    </div>
+  )
+}
+
           {/* Tabs — CSS grid so all 5 always fit equally, no scrolling needed */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', borderBottom: '1px solid var(--border)' }}>
             {[

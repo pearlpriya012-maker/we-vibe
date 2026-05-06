@@ -77,10 +77,18 @@ const STEPS = [
 
 export default function LandingPage() {
   useScrollReveal()
-  const { user, loginWithName, loginWithRandomName } = useAuth()
+  const { user, loginWithName, loginWithRandomName, loginWithGoogle, loginWithEmail, signupWithEmail, resetPassword } = useAuth()
   const router = useRouter()
   const [name, setName] = useState('')
   const [entering, setEntering] = useState(false)
+  // email auth state
+  const [authMode, setAuthMode] = useState('name') // 'name' | 'email'
+  const [emailMode, setEmailMode] = useState('login') // 'login' | 'signup' | 'reset'
+  const [email, setEmail] = useState('')
+  const [emailName, setEmailName] = useState('')
+  const [password, setPassword] = useState('')
+  const [authError, setAuthError] = useState('')
+  const [resetSent, setResetSent] = useState(false)
 
   useEffect(() => {
     if (user) router.replace('/dashboard')
@@ -117,6 +125,44 @@ export default function LandingPage() {
         ? 'Anonymous sign-in is disabled — enable it in Firebase Console'
         : (err?.message?.replace('Firebase: ', '') || 'Something went wrong, try again')
       toast.error(msg)
+    } finally {
+      setEntering(false)
+    }
+  }
+
+  function friendlyAuthError(err) {
+    const map = {
+      'auth/invalid-email': 'Invalid email address.',
+      'auth/user-not-found': 'No account with that email.',
+      'auth/wrong-password': 'Wrong password.',
+      'auth/email-already-in-use': 'That email is already registered — sign in instead.',
+      'auth/weak-password': 'Password must be at least 6 characters.',
+      'auth/too-many-requests': 'Too many attempts. Try again later.',
+      'auth/invalid-credential': 'Email or password is incorrect.',
+    }
+    return map[err?.code] || err?.message?.replace('Firebase: ', '') || 'Something went wrong.'
+  }
+
+  async function handleEmailSubmit(e) {
+    e.preventDefault()
+    setAuthError('')
+    setEntering(true)
+    try {
+      if (emailMode === 'reset') {
+        await resetPassword(email)
+        setResetSent(true)
+        setEntering(false)
+        return
+      }
+      if (emailMode === 'signup') {
+        if (!emailName.trim()) { setAuthError('Enter a display name.'); setEntering(false); return }
+        await signupWithEmail(email, password, emailName)
+      } else {
+        await loginWithEmail(email, password)
+      }
+      router.push('/dashboard')
+    } catch (err) {
+      setAuthError(friendlyAuthError(err))
     } finally {
       setEntering(false)
     }
@@ -177,29 +223,79 @@ export default function LandingPage() {
             Watch. Listen. Vibe together — in perfect sync.
           </p>
 
-          <form onSubmit={handleEnterWithName} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, width: '100%', maxWidth: 400, animation: 'fadeUp 0.7s ease 0.3s both' }}>
-            <input
-              type="text"
-              className="input-vibe"
-              placeholder="Enter your name..."
-              value={name}
-              onChange={e => setName(e.target.value)}
-              maxLength={30}
-              style={{ width: '100%', textAlign: 'center', fontSize: '1rem', padding: '14px 20px' }}
-            />
-            <div style={{ display: 'flex', gap: 12, width: '100%' }}>
-              <button type="submit" disabled={entering} className="btn-primary" style={{ flex: 1, justifyContent: 'center', padding: '14px', fontSize: '0.95rem' }}>
-                {entering ? <span className="spinner" /> : "Let's Go 🚀"}
-              </button>
-              <button type="button" disabled={entering} onClick={handleRandom} style={{
-                flex: 1, background: 'transparent', border: '1px solid rgba(255,255,255,0.15)', color: 'var(--text-dim)',
-                padding: '14px', borderRadius: 8, fontFamily: 'Work Sans', fontSize: '0.95rem',
-                fontWeight: 500, cursor: 'pointer', transition: 'all 0.2s',
-              }}>
-                🎲 Random Name
-              </button>
+          {/* ─── Auth Widget ─── */}
+          <div style={{ width: '100%', maxWidth: 420, animation: 'fadeUp 0.7s ease 0.3s both' }}>
+            {/* Mode toggle */}
+            <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', borderRadius: 10, padding: 4, marginBottom: 16, gap: 4 }}>
+              {[{ key: 'name', label: '👤 Guest' }, { key: 'email', label: '✉️ Email' }].map(({ key, label }) => (
+                <button key={key} onClick={() => { setAuthMode(key); setAuthError('') }}
+                  style={{ flex: 1, padding: '9px 12px', borderRadius: 7, border: 'none', cursor: 'pointer', fontFamily: 'Oswald', fontSize: '0.78rem', letterSpacing: '0.08em', textTransform: 'uppercase', transition: 'all 0.2s',
+                    background: authMode === key ? 'var(--green)' : 'transparent',
+                    color: authMode === key ? '#000' : 'var(--text-dim)',
+                  }}>{label}</button>
+              ))}
             </div>
-          </form>
+
+            {authMode === 'name' ? (
+              <form onSubmit={handleEnterWithName} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <input type="text" className="input-vibe" placeholder="Enter your name..."
+                  value={name} onChange={e => setName(e.target.value)} maxLength={30}
+                  style={{ width: '100%', textAlign: 'center', fontSize: '1rem', padding: '14px 20px' }} />
+                <div style={{ display: 'flex', gap: 12 }}>
+                  <button type="submit" disabled={entering} className="btn-primary" style={{ flex: 1, justifyContent: 'center', padding: '14px', fontSize: '0.95rem' }}>
+                    {entering ? <span className="spinner" /> : "Let's Go 🚀"}
+                  </button>
+                  <button type="button" disabled={entering} onClick={handleRandom}
+                    style={{ flex: 1, background: 'transparent', border: '1px solid rgba(255,255,255,0.15)', color: 'var(--text-dim)', padding: '14px', borderRadius: 8, fontFamily: 'Work Sans', fontSize: '0.95rem', fontWeight: 500, cursor: 'pointer', transition: 'all 0.2s' }}>
+                    🎲 Random
+                  </button>
+                </div>
+                <button type="button" onClick={() => loginWithGoogle().then(() => router.push('/dashboard')).catch(e => toast.error(e.message))}
+                  style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: '#fff', padding: '12px', borderRadius: 8, fontSize: '0.88rem', cursor: 'pointer', fontFamily: 'Work Sans', fontWeight: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+                  Continue with Google
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={handleEmailSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {/* Login / Signup / Reset sub-tabs */}
+                <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
+                  {[{ key: 'login', label: 'Sign In' }, { key: 'signup', label: 'Sign Up' }, { key: 'reset', label: 'Reset' }].map(({ key, label }) => (
+                    <button key={key} type="button" onClick={() => { setEmailMode(key); setAuthError(''); setResetSent(false) }}
+                      style={{ flex: 1, padding: '7px 4px', background: 'transparent', border: 'none', borderBottom: emailMode === key ? '2px solid var(--green)' : '2px solid transparent', color: emailMode === key ? 'var(--green)' : 'var(--text-dim)', fontFamily: 'Oswald', fontSize: '0.72rem', letterSpacing: '0.1em', textTransform: 'uppercase', cursor: 'pointer' }}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                {resetSent ? (
+                  <div style={{ textAlign: 'center', padding: '14px', color: 'var(--green)', fontSize: '0.88rem' }}>
+                    ✅ Reset link sent — check your inbox.
+                  </div>
+                ) : (
+                  <>
+                    {emailMode === 'signup' && (
+                      <input type="text" className="input-vibe" placeholder="Display name…"
+                        value={emailName} onChange={e => setEmailName(e.target.value)} maxLength={30}
+                        style={{ fontSize: '0.9rem', padding: '12px 16px' }} />
+                    )}
+                    <input type="email" className="input-vibe" placeholder="Email…"
+                      value={email} onChange={e => setEmail(e.target.value)}
+                      style={{ fontSize: '0.9rem', padding: '12px 16px' }} />
+                    {emailMode !== 'reset' && (
+                      <input type="password" className="input-vibe" placeholder="Password…"
+                        value={password} onChange={e => setPassword(e.target.value)}
+                        style={{ fontSize: '0.9rem', padding: '12px 16px' }} />
+                    )}
+                    {authError && <p style={{ color: 'var(--pink)', fontSize: '0.78rem', margin: '2px 0 0', textAlign: 'center' }}>{authError}</p>}
+                    <button type="submit" disabled={entering} className="btn-primary" style={{ marginTop: 4, justifyContent: 'center', padding: '13px' }}>
+                      {entering ? <span className="spinner" /> : emailMode === 'signup' ? 'Create Account 🚀' : emailMode === 'reset' ? 'Send Reset Link' : 'Sign In 🔑'}
+                    </button>
+                  </>
+                )}
+              </form>
+            )}
+          </div>
 
           <div style={{ display: 'flex', gap: 48, marginTop: 80, animation: 'fadeUp 0.7s ease 0.4s both' }}>
             {[

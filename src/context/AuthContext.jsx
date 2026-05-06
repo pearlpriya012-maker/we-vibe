@@ -8,6 +8,9 @@ import {
   GoogleAuthProvider,
   signInWithPopup,
   updateProfile,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  sendPasswordResetEmail,
 } from 'firebase/auth'
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore'
 import { auth, db } from '@/lib/firebase'
@@ -81,6 +84,26 @@ export function AuthProvider({ children }) {
     return cred.user
   }
 
+  // ─── Email + Password Sign Up ───
+  async function signupWithEmail(email, password, displayName) {
+    const cred = await createUserWithEmailAndPassword(auth, email, password)
+    await updateProfile(cred.user, { displayName: displayName.trim() })
+    await createUserDoc(cred.user, { displayName: displayName.trim() })
+    return cred.user
+  }
+
+  // ─── Email + Password Sign In ───
+  async function loginWithEmail(email, password) {
+    const cred = await signInWithEmailAndPassword(auth, email, password)
+    await createUserDoc(cred.user)
+    return cred.user
+  }
+
+  // ─── Password Reset ───
+  async function resetPassword(email) {
+    await sendPasswordResetEmail(auth, email)
+  }
+
   // ─── Sign Out ───
   async function logout() {
     localStorage.removeItem('we-vibe-mode')
@@ -151,6 +174,9 @@ export function AuthProvider({ children }) {
     loginWithName,
     loginWithRandomName,
     loginWithGoogle,
+    loginWithEmail,
+    signupWithEmail,
+    resetPassword,
     logout,
   }
 
