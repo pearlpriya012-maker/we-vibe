@@ -17,6 +17,14 @@ export function saveRecentRoom(id, code, name = '') {
   }
 }
 
+export function removeRecentRoom(id) {
+  if (typeof window === 'undefined') return
+  try {
+    const existing = JSON.parse(localStorage.getItem(KEY) || '[]')
+    localStorage.setItem(KEY, JSON.stringify(existing.filter((r) => r.id !== id)))
+  } catch {}
+}
+
 export function getRecentRooms() {
   if (typeof window === 'undefined') return []
   try {

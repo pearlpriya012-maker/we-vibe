@@ -6,7 +6,7 @@ import Link from 'next/link'
 import toast from 'react-hot-toast'
 import { useAuth } from '@/context/AuthContext'
 import { createRoom, joinRoomByCode, createPermanentRoom, getUserPermanentRoom } from '@/lib/rooms'
-import { saveRecentRoom, getRecentRooms } from '@/lib/recentRooms'
+import { saveRecentRoom, getRecentRooms, removeRecentRoom } from '@/lib/recentRooms'
 import { createScreenSession, sendSignal, listenSignals, endScreenSession } from '@/lib/screenshare'
 
 const ICE_CONFIG = {
@@ -479,13 +479,22 @@ export default function DashboardPage() {
                 <div style={{ fontFamily: 'Oswald', fontSize: '0.65rem', letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--text-dim)', marginBottom: 12 }}>Recent Rooms</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {recentRooms.map((r) => (
-                    <button key={r.id} onClick={() => router.push(`/room/${r.id}`)}
-                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', color: '#fff', cursor: 'pointer', transition: 'border-color 0.2s', textAlign: 'left' }}
-                      onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--green)'}
-                      onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}>
-                      <span style={{ fontSize: '0.85rem', fontWeight: 500 }}>{r.name || 'Unnamed Room'}</span>
-                      <span style={{ fontFamily: 'Oswald', fontSize: '0.65rem', letterSpacing: '0.15em', color: 'var(--text-dim)' }}>{r.code}</span>
-                    </button>
+                    <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <button onClick={() => router.push(`/room/${r.id}`)}
+                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', color: '#fff', cursor: 'pointer', transition: 'border-color 0.2s', textAlign: 'left' }}
+                        onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--green)'}
+                        onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}>
+                        <span style={{ fontSize: '0.85rem', fontWeight: 600, color: r.name ? 'var(--green)' : '#fff' }}>{r.name || 'Unnamed Room'}</span>
+                        <span style={{ fontFamily: 'Oswald', fontSize: '0.65rem', letterSpacing: '0.15em', color: 'var(--text-dim)' }}>{r.code}</span>
+                      </button>
+                      <button
+                        onClick={() => { removeRecentRoom(r.id); setRecentRooms(getRecentRooms()) }}
+                        title="Remove"
+                        style={{ flexShrink: 0, width: 28, height: 28, borderRadius: 6, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', color: '#f87171', cursor: 'pointer', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.18)'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.5)' }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.08)'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.2)' }}
+                      >✕</button>
+                    </div>
                   ))}
                 </div>
               </div>

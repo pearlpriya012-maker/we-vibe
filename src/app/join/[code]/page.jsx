@@ -1,12 +1,9 @@
 'use client'
 // src/app/join/[code]/page.jsx
-// Shareable room join link — /join/ABC123
-// Unauthenticated visitors enter their name here; no full login required.
-
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useAuth } from '@/context/AuthContext'
-import { joinRoomByCode } from '@/lib/rooms'
+import { joinRoomByCode, getRoomByCode } from '@/lib/rooms'
 import { saveRecentRoom } from '@/lib/recentRooms'
 
 export default function JoinPage() {
@@ -16,6 +13,13 @@ export default function JoinPage() {
   const [error, setError] = useState(null)
   const [name, setName] = useState('')
   const [joining, setJoining] = useState(false)
+  const [roomInfo, setRoomInfo] = useState(null) // { name, roomCode, mode }
+
+  // Fetch room name for display (no auth needed)
+  useEffect(() => {
+    if (!code) return
+    getRoomByCode(code).then(r => setRoomInfo(r)).catch(() => {})
+  }, [code])
 
   // Once authenticated, auto-join the room
   useEffect(() => {
@@ -96,11 +100,20 @@ export default function JoinPage() {
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
           <div style={{ fontSize: '3rem', marginBottom: 12 }}>🕊️</div>
           <div style={{ fontFamily: 'Oswald', fontSize: '1.6rem', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--green)' }}>
-            Join Room
+            You're Invited
           </div>
-          <div style={{ fontFamily: 'Oswald', fontSize: '1.1rem', letterSpacing: '0.3em', color: 'var(--text-dim)', marginTop: 4 }}>
-            {code?.toUpperCase()}
-          </div>
+
+          {/* Room name — highlighted if available */}
+          {roomInfo?.name ? (
+            <div style={{ marginTop: 10, padding: '10px 20px', background: 'rgba(0,255,136,0.07)', border: '1px solid rgba(0,255,136,0.3)', borderRadius: 10, display: 'inline-block' }}>
+              <div style={{ fontFamily: 'Oswald', fontSize: '1.5rem', fontWeight: 700, color: 'var(--green)', textShadow: '0 0 24px rgba(0,255,136,0.6)', letterSpacing: '0.06em' }}>{roomInfo.name}</div>
+              <div style={{ fontFamily: 'Oswald', fontSize: '0.75rem', letterSpacing: '0.25em', color: 'var(--text-dim)', marginTop: 2 }}>{code?.toUpperCase()}</div>
+            </div>
+          ) : (
+            <div style={{ fontFamily: 'Oswald', fontSize: '1.1rem', letterSpacing: '0.3em', color: 'var(--text-dim)', marginTop: 4 }}>
+              {code?.toUpperCase()}
+            </div>
+          )}
         </div>
 
         <form onSubmit={handleJoin} style={{ display: 'flex', flexDirection: 'column', gap: 20, background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 16, padding: '28px 24px' }}>

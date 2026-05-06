@@ -154,6 +154,15 @@ export async function joinRoomByCode({ code, uid, displayName, photoURL }) {
 }
 
 // ─── Get room once ───
+export async function getRoomByCode(code) {
+  const { getDocs } = await import('firebase/firestore')
+  const q = query(collection(db, 'rooms'), where('roomCode', '==', code.toUpperCase()))
+  const snap = await getDocs(q)
+  if (snap.empty) return null
+  const data = snap.docs[0].data()
+  return { id: snap.docs[0].id, name: data.name || '', roomCode: data.roomCode, mode: data.mode }
+}
+
 export async function getRoom(roomId) {
   const snap = await getDoc(doc(db, 'rooms', roomId))
   if (!snap.exists()) return null
