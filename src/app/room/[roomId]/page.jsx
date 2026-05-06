@@ -3041,7 +3041,10 @@ export default function RoomPage() {
         <header style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'rgba(13,13,13,0.97)', borderBottom: '1px solid var(--border)', zIndex: 10 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <Link href="/dashboard" style={{ fontFamily: 'Oswald', fontSize: '1.1rem', fontWeight: 700, color: 'var(--cyan)', textDecoration: 'none' }}>WE🕊️</Link>
-            <div style={{ fontFamily: 'Oswald', fontSize: '0.68rem', color: 'var(--cyan)', letterSpacing: '0.08em' }}>📺 WATCH ROOM</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+              <div style={{ fontFamily: 'Oswald', fontSize: '0.55rem', color: 'var(--text-dim)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>📺 Watch Room</div>
+              {room.name && <div style={{ fontFamily: 'Oswald', fontSize: '0.85rem', fontWeight: 700, color: 'var(--cyan)', textShadow: '0 0 14px rgba(0,200,255,0.6)', letterSpacing: '0.04em', lineHeight: 1 }}>{room.name}</div>}
+            </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <button onClick={copyCode} style={{ background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.2)', borderRadius: 8, padding: '5px 10px', cursor: 'pointer', fontFamily: 'Oswald', color: 'var(--cyan)', fontSize: '0.7rem' }}>
@@ -3203,7 +3206,10 @@ export default function RoomPage() {
         {/* Header */}
         <header style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 12, padding: '8px 18px', background: 'rgba(13,13,13,0.97)', borderBottom: '1px solid var(--border)', zIndex: 10, position: 'relative' }}>
           <Link href="/dashboard" style={{ fontFamily: 'Oswald', fontSize: '1.15rem', fontWeight: 700, color: 'var(--cyan)', textDecoration: 'none', textShadow: '0 0 12px rgba(0,200,255,0.4)', flexShrink: 0 }}>WE🕊️</Link>
-          <div style={{ fontFamily: 'Oswald', fontSize: '0.68rem', color: 'var(--cyan)', letterSpacing: '0.1em', flexShrink: 0 }}>📺 WATCH ROOM</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 1, flexShrink: 0 }}>
+            <div style={{ fontFamily: 'Oswald', fontSize: '0.58rem', color: 'var(--text-dim)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>📺 Watch Room</div>
+            {room.name && <div style={{ fontFamily: 'Oswald', fontSize: '0.95rem', fontWeight: 700, color: 'var(--cyan)', textShadow: '0 0 16px rgba(0,200,255,0.6)', letterSpacing: '0.04em', lineHeight: 1 }}>{room.name}</div>}
+          </div>
           {/* URL bar (host) */}
           {isHost && (
             <form onSubmit={e => {
@@ -3363,8 +3369,12 @@ export default function RoomPage() {
           <Link href="/dashboard" style={{ fontFamily: 'Oswald', fontSize: '1.2rem', fontWeight: 700, color: 'var(--green)', textDecoration: 'none', textShadow: '0 0 15px rgba(0,200,255,0.5)' }}>WE🕊️</Link>
           <div style={{ width: 1, height: 20, background: 'var(--border)' }} />
           <div>
-            <div style={{ fontFamily: 'Oswald', fontSize: '0.65rem', letterSpacing: '0.12em', color: 'var(--text-dim)', textTransform: 'uppercase' }}>Room</div>
-            <div style={{ fontFamily: 'Oswald', fontSize: '1rem', fontWeight: 600 }}>{room.mode === 'music' ? '🎵' : '📺'} {room.mode.toUpperCase()} ROOM</div>
+            <div style={{ fontFamily: 'Oswald', fontSize: '0.6rem', letterSpacing: '0.12em', color: 'var(--text-dim)', textTransform: 'uppercase' }}>{room.mode === 'music' ? '🎵 Music Room' : '📺 Watch Room'}</div>
+            {room.name ? (
+              <div style={{ fontFamily: 'Oswald', fontSize: '1.05rem', fontWeight: 700, color: 'var(--green)', textShadow: '0 0 18px rgba(0,255,136,0.5)', letterSpacing: '0.04em' }}>{room.name}</div>
+            ) : (
+              <div style={{ fontFamily: 'Oswald', fontSize: '1rem', fontWeight: 600, color: '#fff' }}>{room.roomCode}</div>
+            )}
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
