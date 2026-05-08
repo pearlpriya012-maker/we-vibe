@@ -86,7 +86,7 @@ function MusicVisualizer({ track, isPlaying, compact = false }) {
 }
 
 // ─── Progress Bar — reads time from props, not from player directly ───
-function ProgressBar({ currentTime, duration, isHost, canControl, onSeek }) {
+function ProgressBar({ currentTime, duration, isHost, canControl, onSeek, onSync }) {
   const barRef = useRef(null)
   const pct = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0
 
@@ -114,7 +114,14 @@ function ProgressBar({ currentTime, duration, isHost, canControl, onSeek }) {
         <div style={{ position: 'absolute', top: 0, left: 0, height: '100%', width: `${pct}%`, background: 'linear-gradient(90deg,var(--green),var(--cyan))', borderRadius: 3, boxShadow: '0 0 8px rgba(0,255,136,0.5)' }} />
         {canControl && <div style={{ position: 'absolute', top: '50%', left: `${pct}%`, transform: 'translate(-50%,-50%)', width: 14, height: 14, borderRadius: '50%', background: 'var(--green)', border: '2px solid #000', boxShadow: '0 0 8px var(--green)', cursor: 'pointer' }} />}
       </div>
-      {!canControl && <div style={{ textAlign: 'center', fontSize: '0.68rem', color: 'var(--text-dim)', marginTop: 6, fontStyle: 'italic' }}>Synced with host</div>}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 }}>
+        <div style={{ fontSize: '0.68rem', color: 'var(--text-dim)', fontStyle: 'italic' }}>
+          {!canControl ? (isHost ? '' : 'Synced with host') : ''}
+        </div>
+        {onSync && (
+          <button onClick={onSync} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'rgba(0,200,255,0.1)', border: '1px solid rgba(0,200,255,0.3)', color: 'var(--cyan)', borderRadius: 6, padding: '3px 10px', fontFamily: 'Oswald', fontSize: '0.62rem', letterSpacing: '0.08em', cursor: 'pointer', flexShrink: 0 }}>🔄 SYNC</button>
+        )}
+      </div>
     </div>
   )
 }
@@ -1548,7 +1555,7 @@ export default function RoomPage() {
     if (!room?.watchUrl || !user?.uid) return
     const iv = setInterval(() => {
       updateParticipantWatchTime(roomId, user.uid, watchTimeRef.current).catch(() => {})
-    }, 5000)
+    }, 2000)
     return () => clearInterval(iv)
   }, [room?.watchUrl, user?.uid, roomId])
 
@@ -1564,7 +1571,7 @@ export default function RoomPage() {
           updateParticipantMusicTime(roomId, user.uid, ct).catch(() => {})
         }
       } catch {}
-    }, 4000)
+    }, 2000)
     return () => clearInterval(iv)
   }, [room?.watchUrl, user?.uid, roomId])
 
@@ -2588,6 +2595,25 @@ export default function RoomPage() {
     })
   }
 
+  function handleSyncWithHost() {
+    const liveRoom = roomRef.current
+    if (!liveRoom) return
+    if (liveRoom.watchUrl) {
+      // Watch URL room
+      if (!liveRoom.watchUpdatedAt) return
+      const elapsed = (Date.now() - liveRoom.watchUpdatedAt) / 1000
+      const target = Math.max(0, (liveRoom.watchCurrentTime || 0) + elapsed)
+      watchSeek(target)
+    } else {
+      // Music room
+      if (!liveRoom.currentTrack) return
+      const elapsed = (Date.now() - (liveRoom.currentTimeAt || Date.now())) / 1000
+      const target = Math.max(0, (liveRoom.currentTime || 0) + elapsed)
+      ytPlayerRef.current?.seekTo?.(target, true)
+    }
+    toast.success('Synced with host!')
+  }
+
   async function handleLeave() {
     await leaveRoom(roomId, user.uid)
     toast.success('Left the room')
@@ -2793,7 +2819,7 @@ export default function RoomPage() {
             </div>
           )}
           <div style={{ marginBottom: compact ? 12 : 16 }}>
-            <ProgressBar currentTime={currentTime} duration={duration} isHost={isHost} canControl={canControl} onSeek={handleSeek} />
+            <ProgressBar currentTime={currentTime} duration={duration} isHost={isHost} canControl={canControl} onSeek={handleSeek} onSync={handleSyncWithHost} />
           </div>
           {canControl ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: compact ? 12 : 16, justifyContent: 'center' }}>
