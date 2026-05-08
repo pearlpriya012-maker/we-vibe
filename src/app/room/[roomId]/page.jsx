@@ -8,9 +8,9 @@ import { useAuth } from '@/context/AuthContext'
 import {
   subscribeToRoom, subscribeToMessages,
   updatePlayback, addToQueue, addManyToQueue, removeFromQueue, reorderQueue,
-  setCurrentTrack, skipToNext, skipToNextFromQueue, leaveRoom,
+  setCurrentTrack, skipToNext, skipToNextFromQueue, leaveRoom, closeRoom,
   sendMessage, addReaction, toggleParticipantQueueAccess, toggleParticipantFullControl,
-  kickParticipant, updateMusicMode, updateWatchPlayback, updateParticipantWatchTime,
+  kickParticipant, updateMusicMode, updateWatchPlayback, updateParticipantWatchTime, updateParticipantMusicTime,
 } from '@/lib/rooms'
 import dynamic from 'next/dynamic'
 import GamesOverlay from '@/components/GamesOverlay'
@@ -759,13 +759,19 @@ function ChatPanel({ roomId, messages, currentUser }) {
 }
 
 // ─── Participants Panel ───
-function ParticipantsPanel({ room, currentUser, isHost, roomId, watchTimes }) {
+function ParticipantsPanel({ room, currentUser, isHost, roomId, watchTimes, musicTimes }) {
   const [kickConfirm, setKickConfirm] = useState(null)
   const fmtTime = s => { if (s == null) return null; const m = Math.floor(s / 60); const sec = Math.floor(s % 60); return `${m}:${sec.toString().padStart(2, '0')}` }
   async function handleKick(uid) {
     try { await kickParticipant(roomId, uid); toast.success('Removed'); setKickConfirm(null) }
     catch { toast.error('Could not kick') }
   }
+
+  // Find host's time to compute drift for other participants
+  const hostUid = room?.hostId
+  const hostMusicTime = musicTimes && hostUid ? musicTimes[hostUid] : null
+  const hostWatchTime = watchTimes && hostUid ? watchTimes[hostUid] : null
+
   const sorted = [...(room?.participants || [])].sort((a, b) => {
     if (a.uid === room.hostId) return -1
     if (b.uid === room.hostId) return 1
@@ -791,31 +797,51 @@ function ParticipantsPanel({ room, currentUser, isHost, roomId, watchTimes }) {
         </div>
       )}
       <div style={{ fontFamily: 'Oswald', fontSize: '0.7rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-dim)', padding: '4px 0 8px' }}>{sorted.length} Participant{sorted.length !== 1 ? 's' : ''}</div>
-      {sorted.map(p => (
-        <div key={p.uid} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8, background: p.uid === currentUser?.uid ? 'rgba(0,255,136,0.04)' : 'transparent' }}>
-          <div style={{ position: 'relative' }}>
-            <Avatar user={p} size={34} />
-            <span style={{ position: 'absolute', bottom: 0, right: 0, width: 9, height: 9, borderRadius: '50%', background: 'var(--green)', border: '2px solid var(--bg2)', boxShadow: '0 0 6px var(--green)' }} />
-          </div>
-          <div style={{ flex: 1, overflow: 'hidden' }}>
-            <div style={{ fontSize: '0.875rem', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.displayName}{p.uid === currentUser?.uid && <span style={{ color: 'var(--text-dim)', fontSize: '0.7rem', marginLeft: 6 }}>(you)</span>}</div>
-            {p.uid === room.hostId && <div style={{ fontSize: '0.65rem', color: '#f39c12', fontFamily: 'Oswald' }}>⭐ HOST</div>}
-            {watchTimes && fmtTime(watchTimes[p.uid]) && (
-              <div style={{ fontSize: '0.65rem', color: 'var(--cyan)', fontFamily: 'Oswald', letterSpacing: '0.05em', marginTop: 1 }}>
-                🎬 {fmtTime(watchTimes[p.uid])}
-              </div>
+      {sorted.map(p => {
+        const mTime = musicTimes ? musicTimes[p.uid] : null
+        const wTime = watchTimes ? watchTimes[p.uid] : null
+        const refTime = p.uid === hostUid ? null : (musicTimes ? hostMusicTime : hostWatchTime)
+        const drift = refTime != null && (mTime != null || wTime != null)
+          ? Math.round(((mTime ?? wTime) - refTime) * 10) / 10
+          : null
+        const driftAbs = drift != null ? Math.abs(drift) : null
+        const driftColor = driftAbs == null ? null : driftAbs <= 1 ? 'var(--green)' : driftAbs <= 4 ? '#f59e0b' : 'var(--pink)'
+        const driftLabel = drift != null ? (drift > 0 ? `+${drift}s` : `${drift}s`) : null
+        return (
+          <div key={p.uid} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8, background: p.uid === currentUser?.uid ? 'rgba(0,255,136,0.04)' : 'transparent' }}>
+            <div style={{ position: 'relative' }}>
+              <Avatar user={p} size={34} />
+              <span style={{ position: 'absolute', bottom: 0, right: 0, width: 9, height: 9, borderRadius: '50%', background: 'var(--green)', border: '2px solid var(--bg2)', boxShadow: '0 0 6px var(--green)' }} />
+            </div>
+            <div style={{ flex: 1, overflow: 'hidden' }}>
+              <div style={{ fontSize: '0.875rem', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.displayName}{p.uid === currentUser?.uid && <span style={{ color: 'var(--text-dim)', fontSize: '0.7rem', marginLeft: 6 }}>(you)</span>}</div>
+              {p.uid === room.hostId && <div style={{ fontSize: '0.65rem', color: '#f39c12', fontFamily: 'Oswald' }}>⭐ HOST</div>}
+              {/* Music sync info */}
+              {mTime != null && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2 }}>
+                  <span style={{ fontSize: '0.65rem', color: 'var(--cyan)', fontFamily: 'Oswald', letterSpacing: '0.05em' }}>🎵 {fmtTime(mTime)}</span>
+                  {driftLabel && <span style={{ fontSize: '0.6rem', fontFamily: 'Oswald', color: driftColor, letterSpacing: '0.04em' }}>{driftLabel}</span>}
+                </div>
+              )}
+              {/* Watch sync info */}
+              {wTime != null && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2 }}>
+                  <span style={{ fontSize: '0.65rem', color: 'var(--cyan)', fontFamily: 'Oswald', letterSpacing: '0.05em' }}>🎬 {fmtTime(wTime)}</span>
+                  {driftLabel && <span style={{ fontSize: '0.6rem', fontFamily: 'Oswald', color: driftColor, letterSpacing: '0.04em' }}>{driftLabel}</span>}
+                </div>
+              )}
+            </div>
+            {isHost && p.uid !== currentUser?.uid && (
+              kickConfirm === p.uid
+                ? <div style={{ display: 'flex', gap: 4 }}>
+                    <button onClick={() => handleKick(p.uid)} style={{ background: 'rgba(233,30,99,0.2)', border: '1px solid var(--pink)', color: 'var(--pink)', borderRadius: 6, padding: '3px 10px', fontSize: '0.7rem', cursor: 'pointer' }}>Kick</button>
+                    <button onClick={() => setKickConfirm(null)} style={{ background: 'var(--glass)', border: '1px solid var(--border)', color: 'var(--text-dim)', borderRadius: 6, padding: '3px 8px', fontSize: '0.7rem', cursor: 'pointer' }}>✕</button>
+                  </div>
+                : <button onClick={() => setKickConfirm(p.uid)} style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', fontSize: '0.85rem' }}>🚫</button>
             )}
           </div>
-          {isHost && p.uid !== currentUser?.uid && (
-            kickConfirm === p.uid
-              ? <div style={{ display: 'flex', gap: 4 }}>
-                  <button onClick={() => handleKick(p.uid)} style={{ background: 'rgba(233,30,99,0.2)', border: '1px solid var(--pink)', color: 'var(--pink)', borderRadius: 6, padding: '3px 10px', fontSize: '0.7rem', cursor: 'pointer' }}>Kick</button>
-                  <button onClick={() => setKickConfirm(null)} style={{ background: 'var(--glass)', border: '1px solid var(--border)', color: 'var(--text-dim)', borderRadius: 6, padding: '3px 8px', fontSize: '0.7rem', cursor: 'pointer' }}>✕</button>
-                </div>
-              : <button onClick={() => setKickConfirm(p.uid)} style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', fontSize: '0.85rem' }}>🚫</button>
-          )}
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
@@ -1072,6 +1098,7 @@ export default function RoomPage() {
   const [copiedLink, setCopiedLink] = useState(false)
   const [showGames, setShowGames] = useState(false)
   const [showHeaderMenu, setShowHeaderMenu] = useState(false)
+  const [showCloseConfirm, setShowCloseConfirm] = useState(false)
   const [pictionaryInvite, setPictionaryInvite] = useState(null)
   const [wordchainInvite, setWordchainInvite] = useState(null)
   const [directGame, setDirectGame] = useState(null)
@@ -1155,7 +1182,14 @@ export default function RoomPage() {
 
   useEffect(() => {
     if (!user) { router.replace('/'); return }
-    return subscribeToRoom(roomId, data => { setRoom(data); roomRef.current = data; setLoading(false) })
+    return subscribeToRoom(roomId, data => {
+      if (data.closed) {
+        toast('This room was ended by the host', { icon: '🚪' })
+        router.push('/dashboard')
+        return
+      }
+      setRoom(data); roomRef.current = data; setLoading(false)
+    })
   }, [roomId, user])
 
   // ─── Pictionary invite subscription
@@ -1515,6 +1549,22 @@ export default function RoomPage() {
     const iv = setInterval(() => {
       updateParticipantWatchTime(roomId, user.uid, watchTimeRef.current).catch(() => {})
     }, 5000)
+    return () => clearInterval(iv)
+  }, [room?.watchUrl, user?.uid, roomId])
+
+  // ─── Broadcast this user's music playback time for People panel ───
+  useEffect(() => {
+    if (room?.watchUrl || !user?.uid) return   // only for music rooms
+    const iv = setInterval(() => {
+      try {
+        const p = ytPlayerRef.current
+        if (!p) return
+        const ct = p.getCurrentTime?.()
+        if (typeof ct === 'number' && isFinite(ct) && ct >= 0) {
+          updateParticipantMusicTime(roomId, user.uid, ct).catch(() => {})
+        }
+      } catch {}
+    }, 4000)
     return () => clearInterval(iv)
   }, [room?.watchUrl, user?.uid, roomId])
 
@@ -2544,6 +2594,12 @@ export default function RoomPage() {
     router.push('/dashboard')
   }
 
+  async function handleCloseRoom() {
+    setShowCloseConfirm(false)
+    await closeRoom(roomId)
+    router.push('/dashboard')
+  }
+
   function copyCode() {
     navigator.clipboard.writeText(room.roomCode)
     setCopied(true)
@@ -2843,6 +2899,21 @@ export default function RoomPage() {
       <div style={{ height: '100dvh', display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative', background: 'var(--bg)' }}>
         <div className="grid-bg" />
 
+        {/* Close Room Confirmation Overlay */}
+        {showCloseConfirm && (
+          <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+            <div style={{ background: 'rgba(18,18,18,0.98)', border: '1px solid rgba(233,30,99,0.4)', borderRadius: 16, padding: '28px 24px', maxWidth: 320, width: '100%', boxShadow: '0 16px 48px rgba(0,0,0,0.9)' }}>
+              <div style={{ fontSize: '2rem', textAlign: 'center', marginBottom: 12 }}>🔴</div>
+              <div style={{ fontFamily: 'Oswald', fontSize: '1.1rem', letterSpacing: '0.06em', color: '#fff', textAlign: 'center', marginBottom: 8 }}>End Room for Everyone?</div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', textAlign: 'center', marginBottom: 24 }}>All participants will be removed and the room will be closed.</div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button onClick={() => setShowCloseConfirm(false)} style={{ flex: 1, padding: '11px 0', borderRadius: 10, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: 'var(--text)', fontFamily: 'Oswald', fontSize: '0.82rem', letterSpacing: '0.07em', cursor: 'pointer' }}>Cancel</button>
+                <button onClick={handleCloseRoom} style={{ flex: 1, padding: '11px 0', borderRadius: 10, background: 'rgba(233,30,99,0.2)', border: '1px solid rgba(233,30,99,0.6)', color: 'var(--pink)', fontFamily: 'Oswald', fontSize: '0.82rem', letterSpacing: '0.07em', cursor: 'pointer' }}>End Room</button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Mobile Header */}
         <header style={{ position: 'relative', zIndex: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', backdropFilter: 'blur(20px)', background: 'rgba(13,13,13,0.95)', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -2922,6 +2993,16 @@ export default function RoomPage() {
                     <span style={{ fontFamily: 'Oswald', fontSize: '0.8rem', letterSpacing: '0.07em' }}>{screenStatus === 'sharing' ? `Stop Sharing · ${screenCode}` : 'Share Screen'}</span>
                   </button>
                   <div style={{ height: 1, background: 'rgba(255,255,255,0.07)', margin: '2px 0' }} />
+                  {/* End room (host only) */}
+                  {isHost && (
+                    <button
+                      onClick={e => { e.stopPropagation(); setShowHeaderMenu(false); setShowCloseConfirm(true) }}
+                      style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '11px 16px', background: 'rgba(233,30,99,0.08)', border: 'none', cursor: 'pointer', color: 'var(--pink)', textAlign: 'left' }}
+                    >
+                      <span style={{ fontSize: '1.1rem' }}>🔴</span>
+                      <span style={{ fontFamily: 'Oswald', fontSize: '0.8rem', letterSpacing: '0.07em' }}>End Room for Everyone</span>
+                    </button>
+                  )}
                   {/* Leave room */}
                   <button
                     onClick={e => { e.stopPropagation(); handleLeave(); setShowHeaderMenu(false) }}
@@ -2988,7 +3069,7 @@ export default function RoomPage() {
           <div style={{ flexShrink: 0, display: 'flex', borderBottom: '1px solid var(--border)', background: 'rgba(13,13,13,0.97)', overflowX: 'auto', scrollbarWidth: 'none', position: musicMode ? 'static' : 'sticky', top: 0, zIndex: musicMode ? 'auto' : 5, backdropFilter: 'blur(12px)' }}>
             <style>{`#mob-tabs::-webkit-scrollbar{display:none}`}</style>
             <div id="mob-tabs" style={{ display: 'flex', width: '100%' }}>
-              {[['search','🔍','Search'],['queue','🎵','Queue'],['playlists','📋','Playlist'],['chat','💬','Chat'],['ai','🐻‍❄️','AI Bond']].map(([id, icon, label]) => {
+              {[['search','🔍','Search'],['queue','🎵','Queue'],['playlists','📋','Playlist'],['people','👥','People'],['chat','💬','Chat'],['ai','🐻‍❄️','AI Bond']].map(([id, icon, label]) => {
                 const unread = id === 'chat' && floatMsg
                 return (
                   <button key={id} onClick={() => setMobileTab(id)}
@@ -3009,6 +3090,9 @@ export default function RoomPage() {
             </div>
             <div style={{ display: mobileTab === 'ai' ? 'flex' : 'none', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
               <AIBondPanel room={room} canAdd={canAdd} onAddToQueue={handleAddToQueue} ytAccessToken={ytToken} />
+            </div>
+            <div style={{ display: mobileTab === 'people' ? 'flex' : 'none', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+              <ParticipantsPanel room={room} currentUser={user} isHost={isHost} roomId={roomId} musicTimes={room.musicTimes} />
             </div>
             <div style={{ display: mobileTab === 'chat' ? 'flex' : 'none', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
               <ChatPanel roomId={roomId} messages={messages} currentUser={user} />
@@ -3375,6 +3459,21 @@ export default function RoomPage() {
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
       <div className="grid-bg" />
 
+      {/* Close Room Confirmation Overlay */}
+      {showCloseConfirm && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <div style={{ background: 'rgba(18,18,18,0.98)', border: '1px solid rgba(233,30,99,0.4)', borderRadius: 16, padding: '28px 24px', maxWidth: 360, width: '100%', boxShadow: '0 16px 48px rgba(0,0,0,0.9)' }}>
+            <div style={{ fontSize: '2rem', textAlign: 'center', marginBottom: 12 }}>🔴</div>
+            <div style={{ fontFamily: 'Oswald', fontSize: '1.1rem', letterSpacing: '0.06em', color: '#fff', textAlign: 'center', marginBottom: 8 }}>End Room for Everyone?</div>
+            <div style={{ fontSize: '0.85rem', color: 'var(--text-dim)', textAlign: 'center', marginBottom: 24 }}>All participants will be removed and the room will be closed.</div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => setShowCloseConfirm(false)} style={{ flex: 1, padding: '11px 0', borderRadius: 10, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: 'var(--text)', fontFamily: 'Oswald', fontSize: '0.82rem', letterSpacing: '0.07em', cursor: 'pointer' }}>Cancel</button>
+              <button onClick={handleCloseRoom} style={{ flex: 1, padding: '11px 0', borderRadius: 10, background: 'rgba(233,30,99,0.2)', border: '1px solid rgba(233,30,99,0.6)', color: 'var(--pink)', fontFamily: 'Oswald', fontSize: '0.82rem', letterSpacing: '0.07em', cursor: 'pointer' }}>End Room</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <header style={{ position: 'relative', zIndex: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 20px', backdropFilter: 'blur(20px)', background: 'rgba(13,13,13,0.9)', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -3405,6 +3504,9 @@ export default function RoomPage() {
           <button onClick={() => setShowGames(true)} title="Games" style={{ width: 34, height: 34, borderRadius: 8, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer', fontSize: '0.95rem', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>🎮</button>
           <div className="badge badge-green"><span className="pulse-dot" style={{ width: 6, height: 6 }} />{room.participants?.length || 0} vibing</div>
           {isHost && <div className="badge" style={{ background: 'rgba(243,156,18,0.1)', border: '1px solid rgba(243,156,18,0.3)', color: '#f39c12' }}>⭐ HOST</div>}
+          {isHost && (
+            <button onClick={() => setShowCloseConfirm(true)} className="btn-danger" style={{ padding: '7px 14px', fontSize: '0.8rem', background: 'rgba(233,30,99,0.15)', border: '1px solid rgba(233,30,99,0.5)' }}>🔴 End Room</button>
+          )}
           <button onClick={handleLeave} className="btn-danger" style={{ padding: '7px 14px', fontSize: '0.8rem' }}>Leave</button>
         </div>
       </header>
@@ -3595,7 +3697,7 @@ export default function RoomPage() {
           </div>
           <div style={{ flex: 1, overflow: 'hidden' }}>
             {rightTab === 'chat' && <ChatPanel roomId={roomId} messages={messages} currentUser={user} />}
-            {rightTab === 'participants' && <ParticipantsPanel room={room} currentUser={user} isHost={isHost} roomId={roomId} />}
+            {rightTab === 'participants' && <ParticipantsPanel room={room} currentUser={user} isHost={isHost} roomId={roomId} musicTimes={room.musicTimes} />}
             {rightTab === 'ai' && <AIBondPanel room={room} canAdd={canAdd} onAddToQueue={handleAddToQueue} ytAccessToken={ytToken} />}
           </div>
         </div>

@@ -108,6 +108,14 @@ export async function updateParticipantWatchTime(roomId, uid, seconds) {
   })
 }
 
+// ─── Report this participant's current music time ───
+export async function updateParticipantMusicTime(roomId, uid, seconds) {
+  const { updateDoc, doc: firestoreDoc } = await import('firebase/firestore')
+  await updateDoc(firestoreDoc(db, 'rooms', roomId), {
+    [`musicTimes.${uid}`]: Math.round(seconds * 10) / 10  // one decimal
+  })
+}
+
 // ─── Join a room by code ───
 export async function joinRoomByCode({ code, uid, displayName, photoURL }) {
   const q = query(collection(db, 'rooms'), where('roomCode', '==', code.toUpperCase()))
@@ -130,7 +138,7 @@ export async function joinRoomByCode({ code, uid, displayName, photoURL }) {
     const newParticipants = alreadyIn
       ? fresh
       : [...fresh, { uid, displayName, photoURL: photoURL || '', canAddToQueue: true, joinedAt: Date.now() }]
-    await updateDoc(roomDoc.ref, { participants: newParticipants, lastActivity: serverTimestamp() })
+    await updateDoc(roomDoc.ref, { participants: newParticipants, lastActivity: serverTimestamp(), closed: false })
   } else {
     // Regular room — simple arrayUnion, no ghost cleanup needed
     const alreadyIn = room.participants.some((p) => p.uid === uid)
@@ -173,7 +181,25 @@ export async function getRoom(roomId) {
 export function subscribeToRoom(roomId, callback) {
   return onSnapshot(doc(db, 'rooms', roomId), (snap) => {
     if (snap.exists()) callback(snap.data())
+    else callback({ closed: true }) // room was deleted or closed
   })
+}
+
+// ─── Close room (host only) — kicks everyone out ───
+export async function closeRoom(roomId) {
+  const room = await getRoom(roomId)
+  if (!room) return
+  if (room.permanent) {
+    // Permanent rooms are never deleted — signal closed and clear participants
+    await updateDoc(doc(db, 'rooms', roomId), {
+      closed: true,
+      participants: [],
+      lastActivity: serverTimestamp(),
+    })
+  } else {
+    // Deleting the doc triggers subscribeToRoom to notify all active subscribers
+    await deleteDoc(doc(db, 'rooms', roomId))
+  }
 }
 
 // ─── Update playback state (host only) ───
