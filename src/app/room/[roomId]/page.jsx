@@ -3259,7 +3259,7 @@ export default function RoomPage() {
           ) : (
             <iframe
               key={room.watchUrl}
-              src={`/api/proxy?url=${encodeURIComponent(room.watchUrl)}`}
+              src={isKnownPlatform ? room.watchUrl : `/api/proxy?url=${encodeURIComponent(room.watchUrl)}`}
               allow="autoplay; fullscreen; picture-in-picture"
               allowFullScreen
               style={{ position: 'absolute', top: watchCrop ? -65 : 0, left: 0, width: '100%', height: watchCrop ? 'calc(100% + 65px)' : '100%', border: 'none', display: 'block' }}
@@ -3421,7 +3421,7 @@ export default function RoomPage() {
               ) : (
                 <iframe
                   key={room.watchUrl}
-                  src={`/api/proxy?url=${encodeURIComponent(room.watchUrl)}`}
+                  src={isKnownPlatform ? room.watchUrl : `/api/proxy?url=${encodeURIComponent(room.watchUrl)}`}
                   allow="autoplay; fullscreen; picture-in-picture"
                   allowFullScreen
                   style={{ position: 'absolute', top: watchCrop ? -65 : 0, left: 0, width: '100%', height: watchCrop ? 'calc(100% + 65px)' : '100%', border: 'none', display: 'block' }}
