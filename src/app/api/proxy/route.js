@@ -6,6 +6,7 @@ const ALLOWED_PROXY_HOSTS = new Set([
   'www.dailymotion.com', 'dailymotion.com',
   'player.vimeo.com', 'vimeo.com',
   'www.twitch.tv', 'player.twitch.tv',
+  'player.bilibili.com', 'www.bilibili.com', 'bilibili.com',
 ])
 
 // Private/loopback IP ranges — block to prevent SSRF

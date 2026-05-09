@@ -19,6 +19,39 @@ import { subscribePictionaryInvite, respondToPictionaryInvite } from '@/lib/pict
 import { subscribeWordChainInvite, respondToWordChainInvite } from '@/lib/wordChainFirestore'
 import { createScreenSession, sendSignal as sendScreenSignal, listenSignals as listenScreenSignals, endScreenSession } from '@/lib/screenshare'
 
+// ─── Watch URL resolver: converts any video page URL → embed URL ───
+async function resolveWatchUrl(raw) {
+  const s = raw.trim()
+  // YouTube
+  const ytM = s.match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/)
+  if (ytM) return `https://www.youtube.com/embed/${ytM[1]}?autoplay=1&rel=0&enablejsapi=1`
+  // Dailymotion (web or dai.ly short URL)
+  const dmM = s.match(/(?:(?:www\.)?dailymotion\.com\/(?:video|embed\/video)\/|(?:www\.)?dai\.ly\/)([A-Za-z0-9]+)/)
+  if (dmM) return `https://www.dailymotion.com/embed/video/${dmM[1]}?autoplay=1`
+  // Vimeo
+  const vmM = s.match(/(?:www\.)?vimeo\.com\/(\d+)/)
+  if (vmM) return `https://player.vimeo.com/video/${vmM[1]}?autoplay=1`
+  // Bilibili BV ID (web URL)
+  const bvM = s.match(/bilibili\.com\/video\/(BV[A-Za-z0-9]+)/)
+  if (bvM) return `https://player.bilibili.com/player.html?bvid=${bvM[1]}&page=1&autoplay=1`
+  // Bilibili AV ID (web URL)
+  const avM = s.match(/bilibili\.com\/video\/av(\d+)/i)
+  if (avM) return `https://player.bilibili.com/player.html?aid=${avM[1]}&page=1&autoplay=1`
+  // b23.tv app share link → resolve server-side, then re-parse
+  if (/(?:^https?:\/\/)?(?:www\.)?b23\.tv\//i.test(s)) {
+    try {
+      const normalised = /^https?:\/\//i.test(s) ? s : `https://${s}`
+      const res = await fetch(`/api/resolve-url?url=${encodeURIComponent(normalised)}`)
+      const data = await res.json()
+      if (data.resolved && data.resolved !== s) return resolveWatchUrl(data.resolved)
+    } catch {}
+    return null
+  }
+  // Generic https URL — use as-is
+  if (/^https?:\/\//i.test(s)) return s
+  return null
+}
+
 function Avatar({ user, size = 32 }) {
   if (user?.photoURL) return <img src={user.photoURL} alt="" style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--border)', flexShrink: 0 }} />
   return (
@@ -3150,6 +3183,9 @@ export default function RoomPage() {
   // ══════════════════════════════════════════
   if (room.watchUrl && isMobile) {
     const isYt = /youtube\.com\/embed/.test(room.watchUrl)
+    const isDm = /dailymotion\.com\/embed/.test(room.watchUrl)
+    const isBili = /player\.bilibili\.com/.test(room.watchUrl)
+    const isKnownPlatform = isYt || isDm || isBili || /player\.vimeo\.com/.test(room.watchUrl)
     const fmtTime = s => { const m = Math.floor(s/60); const sec = Math.floor(s%60); return `${m}:${sec.toString().padStart(2,'0')}` }
     return (
       <div style={{ height: '100dvh', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#000', position: 'relative' }}>
@@ -3176,7 +3212,7 @@ export default function RoomPage() {
               <span style={{ fontFamily: 'Oswald', fontSize: '0.7rem', color: 'var(--cyan)' }}>{room.participants?.length || 0}</span>
             </div>
             <button onClick={handleLeave} style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(233,30,99,0.1)', border: '1px solid rgba(233,30,99,0.3)', color: 'var(--pink)', cursor: 'pointer', fontSize: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
-            {!isYt && (
+            {!isKnownPlatform && (
               <button onClick={() => setWatchCrop(c => !c)} title="Crop to video" style={{ width: 32, height: 32, borderRadius: 8, background: watchCrop ? 'rgba(0,200,255,0.15)' : 'rgba(255,255,255,0.05)', border: `1px solid ${watchCrop ? 'rgba(0,200,255,0.4)' : 'rgba(255,255,255,0.1)'}`, color: watchCrop ? 'var(--cyan)' : 'var(--text-dim)', cursor: 'pointer', fontSize: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✂️</button>
             )}
           </div>
@@ -3187,18 +3223,12 @@ export default function RoomPage() {
 
         {/* URL Bar — host only */}
         {isHost && (
-          <form onSubmit={e => {
+          <form onSubmit={async e => {
             e.preventDefault()
             const s = watchUrlInput.trim()
             if (!s) return
-            const ytMatch = s.match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/)
-            const dmMatch = s.match(/dailymotion\.com\/(?:video|embed\/video)\/([A-Za-z0-9]+)/)
-            const vimeoMatch = s.match(/vimeo\.com\/(\d+)/)
-            const url = ytMatch ? `https://www.youtube.com/embed/${ytMatch[1]}?autoplay=1&rel=0&enablejsapi=1`
-              : dmMatch ? `https://www.dailymotion.com/embed/video/${dmMatch[1]}?autoplay=1`
-              : vimeoMatch ? `https://player.vimeo.com/video/${vimeoMatch[1]}?autoplay=1`
-              : (/^https?:\/\//i.test(s) ? s : null)
-            if (!url) { toast.error('Invalid URL'); return }
+            const url = await resolveWatchUrl(s)
+            if (!url) { toast.error('Invalid or unsupported URL'); return }
             updateWatchPlayback(roomId, { watchUrl: url, watchIsPlaying: false, watchCurrentTime: 0, watchUpdatedAt: Date.now() })
             setWatchUrlInput('')
           }} style={{ flexShrink: 0, display: 'flex', gap: 8, padding: '7px 12px', background: 'rgba(13,13,13,0.97)', borderBottom: '1px solid rgba(0,200,255,0.12)' }}>
@@ -3210,7 +3240,7 @@ export default function RoomPage() {
               style={{ flex: 1, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(0,200,255,0.2)', borderRadius: 8, padding: '6px 10px', color: '#fff', fontSize: '0.75rem', fontFamily: 'inherit', outline: 'none', minWidth: 0 }}
             />
             <button type="submit" style={{ flexShrink: 0, background: 'var(--cyan)', border: 'none', borderRadius: 8, padding: '6px 12px', color: '#000', fontFamily: 'Oswald', fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer', letterSpacing: '0.06em' }}>GO</button>
-            {!isYt && (
+            {!isKnownPlatform && (
               <button type="button" onClick={() => setWatchCrop(c => !c)} title="Crop to video only" style={{ flexShrink: 0, background: watchCrop ? 'rgba(0,200,255,0.15)' : 'rgba(255,255,255,0.05)', border: `1px solid ${watchCrop ? 'rgba(0,200,255,0.4)' : 'rgba(255,255,255,0.15)'}`, borderRadius: 8, padding: '8px 12px', color: watchCrop ? 'var(--cyan)' : 'var(--text-dim)', cursor: 'pointer', fontSize: '0.8rem' }}>✂️ {watchCrop ? 'Cropped' : 'Crop'}</button>
             )}
           </form>
@@ -3317,6 +3347,9 @@ export default function RoomPage() {
   // ══════════════════════════════════════════
   if (room.watchUrl && !isMobile) {
     const isYt = /youtube\.com\/embed/.test(room.watchUrl)
+    const isDm = /dailymotion\.com\/embed/.test(room.watchUrl)
+    const isBili = /player\.bilibili\.com/.test(room.watchUrl)
+    const isKnownPlatform = isYt || isDm || isBili || /player\.vimeo\.com/.test(room.watchUrl)
     const fmtTime = s => { const m = Math.floor(s / 60); const sec = Math.floor(s % 60); return `${m}:${sec.toString().padStart(2, '0')}` }
     return (
       <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#0a0a0a', position: 'relative' }}>
@@ -3334,18 +3367,12 @@ export default function RoomPage() {
           </div>
           {/* URL bar (host) */}
           {isHost && (
-            <form onSubmit={e => {
+            <form onSubmit={async e => {
               e.preventDefault()
               const s = watchUrlInput.trim()
               if (!s) return
-              const ytMatch = s.match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/)
-              const dmMatch = s.match(/dailymotion\.com\/(?:video|embed\/video)\/([A-Za-z0-9]+)/)
-              const vimeoMatch = s.match(/vimeo\.com\/(\d+)/)
-              const url = ytMatch ? `https://www.youtube.com/embed/${ytMatch[1]}?autoplay=1&rel=0&enablejsapi=1`
-                : dmMatch ? `https://www.dailymotion.com/embed/video/${dmMatch[1]}?autoplay=1`
-                : vimeoMatch ? `https://player.vimeo.com/video/${vimeoMatch[1]}?autoplay=1`
-                : (/^https?:\/\//i.test(s) ? s : null)
-              if (!url) { toast.error('Invalid URL'); return }
+              const url = await resolveWatchUrl(s)
+              if (!url) { toast.error('Invalid or unsupported URL'); return }
               updateWatchPlayback(roomId, { watchUrl: url, watchIsPlaying: false, watchCurrentTime: 0, watchUpdatedAt: Date.now() })
               setWatchUrlInput('')
             }} style={{ flex: 1, display: 'flex', gap: 6, minWidth: 0 }}>
@@ -3355,7 +3382,7 @@ export default function RoomPage() {
                 style={{ flex: 1, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(0,200,255,0.2)', borderRadius: 8, padding: '5px 10px', color: '#fff', fontSize: '0.75rem', fontFamily: 'inherit', outline: 'none', minWidth: 0 }}
               />
               <button type="submit" style={{ flexShrink: 0, background: 'var(--cyan)', border: 'none', borderRadius: 8, padding: '5px 12px', color: '#000', fontFamily: 'Oswald', fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer' }}>GO</button>
-              {!isYt && (
+              {!isKnownPlatform && (
                 <button type="button" onClick={() => setWatchCrop(c => !c)} style={{ flexShrink: 0, background: watchCrop ? 'rgba(0,200,255,0.15)' : 'rgba(255,255,255,0.05)', border: `1px solid ${watchCrop ? 'rgba(0,200,255,0.4)' : 'rgba(255,255,255,0.1)'}`, borderRadius: 8, padding: '5px 10px', color: watchCrop ? 'var(--cyan)' : 'var(--text-dim)', cursor: 'pointer', fontSize: '0.78rem' }}>✂️ {watchCrop ? 'Cropped' : 'Crop'}</button>
               )}
             </form>
