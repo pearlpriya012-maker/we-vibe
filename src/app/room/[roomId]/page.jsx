@@ -1569,12 +1569,13 @@ export default function RoomPage() {
         setWatchTime(Math.floor(t))
       } else {
         // Non-YouTube (Bilibili, Dailymotion, etc.): no cross-origin JS API,
-        // estimate from Firestore state so People panel shows real progress
+        // estimate from Firestore state. The iframe always autoplays natively,
+        // so we ignore watchIsPlaying and always compute elapsed.
         const r = roomRef.current
         if (!r) return
         const base = r.watchCurrentTime || 0
         const updatedAt = r.watchUpdatedAt || null
-        const t = r.watchIsPlaying && updatedAt
+        const t = updatedAt
           ? Math.max(0, base + (Date.now() - updatedAt) / 1000)
           : base
         watchTimeRef.current = t
@@ -1586,10 +1587,12 @@ export default function RoomPage() {
 
   // ─── Host: push current time every 2s so guests can continuously re-sync ───
   useEffect(() => {
-    if (!room?.watchUrl || !isHost || !room.watchIsPlaying) return
+    if (!room?.watchUrl || !isHost) return
+    // For YouTube: only push when playing (player controls are in sync controls bar)
+    // For non-YouTube: always push — the iframe autoplays natively, watchIsPlaying stays false
+    const localIsYt = /youtube\.com\/embed/.test(room.watchUrl)
+    if (localIsYt && !room.watchIsPlaying) return
     const iv = setInterval(() => {
-      // watchGetTime() returns YT player time for YouTube, or watchTimeRef
-      // (estimated from Firestore) for non-YouTube — both are correct
       const t = watchGetTime()
       updateWatchPlayback(roomId, { watchCurrentTime: t, watchUpdatedAt: Date.now() }).catch(() => {})
     }, 2000)
@@ -3242,7 +3245,8 @@ export default function RoomPage() {
             if (!s) return
             const url = await resolveWatchUrl(s)
             if (!url) { toast.error('Invalid or unsupported URL'); return }
-            updateWatchPlayback(roomId, { watchUrl: url, watchIsPlaying: false, watchCurrentTime: 0, watchUpdatedAt: Date.now() })
+            const isYtUrl = /youtube\.com\/embed/.test(url)
+            updateWatchPlayback(roomId, { watchUrl: url, watchIsPlaying: !isYtUrl, watchCurrentTime: 0, watchUpdatedAt: Date.now() })
             setWatchUrlInput('')
           }} style={{ flexShrink: 0, display: 'flex', gap: 8, padding: '7px 12px', background: 'rgba(13,13,13,0.97)', borderBottom: '1px solid rgba(0,200,255,0.12)' }}>
             <span style={{ fontSize: '0.85rem', alignSelf: 'center', flexShrink: 0 }}>🔗</span>
@@ -3386,7 +3390,8 @@ export default function RoomPage() {
               if (!s) return
               const url = await resolveWatchUrl(s)
               if (!url) { toast.error('Invalid or unsupported URL'); return }
-              updateWatchPlayback(roomId, { watchUrl: url, watchIsPlaying: false, watchCurrentTime: 0, watchUpdatedAt: Date.now() })
+              const isYtUrl = /youtube\.com\/embed/.test(url)
+              updateWatchPlayback(roomId, { watchUrl: url, watchIsPlaying: !isYtUrl, watchCurrentTime: 0, watchUpdatedAt: Date.now() })
               setWatchUrlInput('')
             }} style={{ flex: 1, display: 'flex', gap: 6, minWidth: 0 }}>
               <span style={{ fontSize: '0.85rem', alignSelf: 'center', flexShrink: 0 }}>🔗</span>
