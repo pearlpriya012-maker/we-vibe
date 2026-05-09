@@ -1562,10 +1562,24 @@ export default function RoomPage() {
   useEffect(() => {
     if (!room?.watchUrl) return
     const iv = setInterval(() => {
-      if (!watchYtPlayerRef.current?.getCurrentTime) return
-      const t = watchYtPlayerRef.current.getCurrentTime()
-      watchTimeRef.current = t
-      setWatchTime(Math.floor(t))
+      if (watchYtPlayerRef.current?.getCurrentTime) {
+        // YouTube: read exact time from JS API
+        const t = watchYtPlayerRef.current.getCurrentTime()
+        watchTimeRef.current = t
+        setWatchTime(Math.floor(t))
+      } else {
+        // Non-YouTube (Bilibili, Dailymotion, etc.): no cross-origin JS API,
+        // estimate from Firestore state so People panel shows real progress
+        const r = roomRef.current
+        if (!r) return
+        const base = r.watchCurrentTime || 0
+        const updatedAt = r.watchUpdatedAt || null
+        const t = r.watchIsPlaying && updatedAt
+          ? Math.max(0, base + (Date.now() - updatedAt) / 1000)
+          : base
+        watchTimeRef.current = t
+        setWatchTime(Math.floor(t))
+      }
     }, 500)
     return () => clearInterval(iv)
   }, [room?.watchUrl])
@@ -1574,11 +1588,10 @@ export default function RoomPage() {
   useEffect(() => {
     if (!room?.watchUrl || !isHost || !room.watchIsPlaying) return
     const iv = setInterval(() => {
-      if (watchYtPlayerRef.current?.getCurrentTime) {
-        const t = watchYtPlayerRef.current.getCurrentTime()
-        // Include watchUpdatedAt so guests' isNewUpdate fires and they can drift-correct
-        updateWatchPlayback(roomId, { watchCurrentTime: t, watchUpdatedAt: Date.now() }).catch(() => {})
-      }
+      // watchGetTime() returns YT player time for YouTube, or watchTimeRef
+      // (estimated from Firestore) for non-YouTube — both are correct
+      const t = watchGetTime()
+      updateWatchPlayback(roomId, { watchCurrentTime: t, watchUpdatedAt: Date.now() }).catch(() => {})
     }, 2000)
     return () => clearInterval(iv)
   }, [room?.watchUrl, isHost, room?.watchIsPlaying, roomId])
