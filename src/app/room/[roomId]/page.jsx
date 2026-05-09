@@ -27,7 +27,7 @@ async function resolveWatchUrl(raw) {
   if (ytM) return `https://www.youtube.com/embed/${ytM[1]}?autoplay=1&rel=0&enablejsapi=1`
   // Dailymotion (web or dai.ly short URL)
   const dmM = s.match(/(?:(?:www\.)?dailymotion\.com\/(?:video|embed\/video)\/|(?:www\.)?dai\.ly\/)([A-Za-z0-9]+)/)
-  if (dmM) return `https://www.dailymotion.com/embed/video/${dmM[1]}?autoplay=1`
+  if (dmM) return `https://www.dailymotion.com/embed/video/${dmM[1]}?autoplay=1&api=postmessage`
   // Vimeo
   const vmM = s.match(/(?:www\.)?vimeo\.com\/(\d+)/)
   if (vmM) return `https://player.vimeo.com/video/${vmM[1]}?autoplay=1`
@@ -1567,10 +1567,8 @@ export default function RoomPage() {
         const t = watchYtPlayerRef.current.getCurrentTime()
         watchTimeRef.current = t
         setWatchTime(Math.floor(t))
-      } else {
-        // Non-YouTube (Bilibili, Dailymotion, etc.): no cross-origin JS API,
-        // estimate from Firestore state. The iframe always autoplays natively,
-        // so we ignore watchIsPlaying and always compute elapsed.
+      } else if (!/dailymotion\.com\/embed/.test(room.watchUrl)) {
+        // Non-YouTube, non-Dailymotion (Bilibili etc.): estimate from Firestore
         const r = roomRef.current
         if (!r) return
         const base = r.watchCurrentTime || 0
@@ -1581,8 +1579,27 @@ export default function RoomPage() {
         watchTimeRef.current = t
         setWatchTime(Math.floor(t))
       }
+      // Dailymotion: time comes from postMessage listener below — nothing to do here
     }, 500)
     return () => clearInterval(iv)
+  }, [room?.watchUrl])
+
+  // ─── Dailymotion postMessage API → get real player time ───
+  useEffect(() => {
+    if (!room?.watchUrl || !/dailymotion\.com\/embed/.test(room.watchUrl)) return
+    function handleDmMessage(e) {
+      if (e.origin !== 'https://www.dailymotion.com') return
+      try {
+        const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data
+        if (!data || typeof data !== 'object') return
+        if (data.event === 'timeupdate' && typeof data.time === 'number') {
+          watchTimeRef.current = data.time
+          setWatchTime(Math.floor(data.time))
+        }
+      } catch {}
+    }
+    window.addEventListener('message', handleDmMessage)
+    return () => window.removeEventListener('message', handleDmMessage)
   }, [room?.watchUrl])
 
   // ─── Host: push current time every 2s so guests can continuously re-sync ───
